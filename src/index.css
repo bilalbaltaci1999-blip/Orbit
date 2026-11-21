@@ -1,0 +1,262 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  :root {
+    --font-display: 'Plus Jakarta Sans', system-ui, sans-serif;
+    --font-sans: 'Manrope', system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+    --orbit-bg: #0B0B12;
+    --orbit-bg-sec: #10111B;
+    --orbit-panel: #151522;
+    --orbit-card: #19192A;
+    --orbit-accent: #7C3AED;
+    --orbit-neon: #A855F7;
+    --orbit-light: #C084FC;
+    --orbit-border: #29293D;
+    --orbit-text: #F8FAFC;
+    --orbit-muted: #A1A1B5;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+    font-family: var(--font-sans);
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  h1,
+  h2,
+  h3,
+  .font-display {
+    font-family: var(--font-display);
+  }
+
+  .font-mono {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+
+  :focus-visible {
+    outline: 2px solid #A855F7;
+    outline-offset: 2px;
+  }
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+.pb-safe {
+  padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+}
+
+.pt-safe {
+  padding-top: env(safe-area-inset-top);
+}
+
+/* Custom subtle scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(161, 161, 181, 0.22);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(168, 85, 247, 0.45);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+html.reduce-motion *,
+html.reduce-motion ::before,
+html.reduce-motion ::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+
+@keyframes orbit-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-orbit-enter {
+  animation: orbit-fade-up 0.24s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes orbit-float-up {
+  0% {
+    opacity: 0;
+    transform: translateY(16px) scale(0.75);
+  }
+  18% {
+    opacity: 1;
+    transform: translateY(-10px) scale(1.1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-110px) scale(0.95);
+  }
+}
+
+.animate-orbit-float {
+  animation: orbit-float-up 2.5s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes orbit-badge-pop {
+  0% {
+    transform: scale(1) rotate(0deg);
+  }
+  28% {
+    transform: scale(1.32) rotate(-9deg);
+  }
+  58% {
+    transform: scale(0.92) rotate(5deg);
+  }
+  80% {
+    transform: scale(1.1) rotate(-2deg);
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+@keyframes orbit-sparkle-burst {
+  0% {
+    opacity: 0.9;
+    transform: scale(0.65);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.9);
+  }
+}
+
+@keyframes orbit-card-shimmer {
+  0% {
+    transform: translateX(-120%) skewX(-18deg);
+    opacity: 0;
+  }
+  35% {
+    opacity: 0.45;
+  }
+  100% {
+    transform: translateX(220%) skewX(-18deg);
+    opacity: 0;
+  }
+}
+
+.animate-orbit-badge-pop {
+  animation: orbit-badge-pop 0.52s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.animate-orbit-sparkle-burst {
+  animation: orbit-sparkle-burst 0.58s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-orbit-card-shimmer {
+  animation: orbit-card-shimmer 0.72s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes orbit-spin-slow {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes orbit-pulse-glow {
+  0%, 100% {
+    transform: scale(0.98);
+    opacity: 0.65;
+  }
+  50% {
+    transform: scale(1.07);
+    opacity: 1;
+  }
+}
+
+@keyframes orbit-flame-flicker {
+  0%, 100% {
+    transform: scale(1) rotate(0deg);
+    opacity: 0.85;
+  }
+  33% {
+    transform: scale(1.05) rotate(2deg);
+    opacity: 1;
+  }
+  66% {
+    transform: scale(0.99) rotate(-2deg);
+    opacity: 0.9;
+  }
+}
+
+@keyframes orbit-crown-float {
+  0%, 100% {
+    transform: translateY(0px) scale(1);
+  }
+  50% {
+    transform: translateY(-2.5px) scale(1.05);
+  }
+}
+
+@keyframes orbit-banner-shift {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+.orbit-spin-slow {
+  animation: orbit-spin-slow 9s linear infinite;
+}
+
+.orbit-pulse-glow {
+  animation: orbit-pulse-glow 2.4s ease-in-out infinite;
+}
+
+.orbit-flame-flicker {
+  animation: orbit-flame-flicker 1.8s ease-in-out infinite;
+}
+
+.orbit-crown-float {
+  animation: orbit-crown-float 2.6s ease-in-out infinite;
+}
+
+.orbit-banner-shift {
+  background-size: 220% 220%;
+  animation: orbit-banner-shift 8s ease infinite;
+}

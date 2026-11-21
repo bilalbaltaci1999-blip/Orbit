@@ -1,0 +1,6 @@
+{
+  "name": "ORBIT",
+  "description": "Gerçek zamanlı sesli, görüntülü ve metin tabanlı topluluk ve iletişim platformu.",
+  "requestFramePermissions": ["microphone", "camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

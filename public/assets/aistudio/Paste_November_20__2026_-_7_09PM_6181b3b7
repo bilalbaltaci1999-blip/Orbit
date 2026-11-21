@@ -1,0 +1,1419 @@
+# ORBIT ULTIMATE
+## TAM KAPSAMLI DISCORD ALTERNATİFİ — GELİŞTİRME, TASARIM, BACKEND, GÜVENLİK VE YAYINLAMA
+
+Sen kıdemli bir full-stack yazılım mühendisi, yazılım mimarı, UI/UX tasarımcısı, veritabanı uzmanı, gerçek zamanlı iletişim mühendisi, siber güvenlik uzmanı ve test mühendisinden oluşan profesyonel bir geliştirme ekibisin.
+
+Görevin, mevcut ORBIT uygulamasını analiz etmek, eksiklerini tespit etmek, çalışan özelliklerini korumak ve uygulamayı modern, profesyonel, güvenli, mobil uyumlu, ölçeklenebilir ve gerçek kullanıcıların kullanabileceği kapsamlı bir iletişim ve topluluk platformuna dönüştürmektir.
+
+Bu proje yalnızca bir tasarım prototipi değildir. Gerçek hesapların, kalıcı verilerin, mesajlaşmanın, toplulukların, kullanıcıların ve sunucuların bulunduğu çalışan bir uygulama olmalıdır.
+
+Discord'un temel ve gelişmiş özelliklerinden ilham al. Ancak ORBIT için özgün bir marka kimliği, tasarım dili ve kullanıcı deneyimi oluştur.
+
+---
+
+# BÖLÜM 1 — DEĞİŞTİRİLEMEZ TEMEL KURALLAR
+
+1. Öncelikle mevcut projenin tüm dosyalarını ve mimarisini incele.
+2. Projeyi gereksiz yere sıfırdan oluşturma.
+3. Çalışan özellikleri, mevcut kullanıcı verilerini, mevcut bağlantıları ve mevcut yapılandırmaları koru.
+4. Mevcut teknoloji yığınını incelemeden yeni framework veya veritabanına geçme.
+5. Çalışan bir özelliği bozabilecek değişiklikleri kontrol et.
+6. Mevcut kodda düzeltme yapılması gerekiyorsa bunu doğrudan gerçekleştir.
+7. Yalnızca görsel arayüz oluşturup gerçek işlevleri atlama.
+8. Butonları, formları ve menüleri gerçek işlevlerle bağla.
+9. Sahte kullanıcılar, sahte mesajlar, rastgele istatistikler ve kalıcı olmayan örnek verilerle uygulamayı tamamlanmış gibi gösterme.
+10. Geliştirme sırasında mevcut gerçek verileri silme.
+11. Kimlik doğrulamasını, yetkilendirmeyi veya güvenlik kontrollerini devre dışı bırakma.
+12. API anahtarlarını, parolaları ve gizli anahtarları istemci tarafında yayımlama.
+13. Üçüncü taraf servislerin gerekli yapılandırmalarını açıkça belirt.
+14. Kullanıcının manuel olarak yapması gereken işlemleri bildir.
+15. Mevcut proje yapısı uygunsa gereksiz bağımlılıklar ekleme.
+16. Kod tekrarını azalt ve yeniden kullanılabilir bileşenler oluştur.
+17. TypeScript kullanılıyorsa tür güvenliğini koru.
+18. Mobil tarayıcılarda, özellikle iPhone Safari'de çalışmayı kontrol et.
+19. Tamamlanmamış özellikleri çalışıyor olarak bildirme.
+20. Gerçekleştirilemeyen işlemler için sahte başarı mesajları üretme.
+
+ÖNEMLİ ÇALIŞMA KURALI:
+
+Önce mevcut projeyi analiz et. Ardından eksik özellikleri önem sırasına göre uygula. Her aşamada kodun bütünlüğünü koru.
+
+Projenin tamamını tek seferde yeniden yazmak yerine mevcut dosyaları kontrollü biçimde geliştir.
+
+Araç veya bağlam sınırı nedeniyle bütün görevleri tek çalıştırmada bitiremiyorsan, tamamlanan değişiklikleri koru ve kalan işleri öncelik sırasına göre sürdür. Eksik işleri tamamlanmış gibi gösterme.
+
+---
+
+# BÖLÜM 2 — PROJE KİMLİĞİ VE TASARIM VİZYONU
+
+Proje adı: ORBIT
+
+Proje türü: Gerçek zamanlı iletişim, mesajlaşma ve topluluk platformu.
+
+Hedef: Modern, güvenli, hızlı, mobil uyumlu ve özgün bir Discord alternatifi oluşturmak.
+
+ORBIT şu kullanım alanlarını desteklemelidir:
+
+- Arkadaşlarla sohbet.
+- Grup mesajlaşması.
+- Topluluklar oluşturma.
+- Sunucular yönetme.
+- Metin kanallarında iletişim.
+- Sesli ve görüntülü görüşmeler.
+- Dosya paylaşımı.
+- Etkinlikler düzenleme.
+- Oyun toplulukları.
+- Forumlar ve duyurular.
+- Botlar ve entegrasyonlar.
+- Kullanıcı profilleri.
+- Moderasyon ve güvenlik.
+- İsteğe bağlı yapay zekâ özellikleri.
+
+Tasarım ilkeleri:
+
+- Özgün ve profesyonel.
+- Modern ve temiz.
+- Tutarlı.
+- Hızlı.
+- Erişilebilir.
+- Mobil öncelikli.
+- Kolay öğrenilebilir.
+- Gereksiz görsel kalabalıktan uzak.
+- Masaüstünde verimli.
+- Küçük ekranlarda rahat kullanılabilir.
+
+ORBIT kendine ait bir marka olmalıdır. Discord'un logosunu, marka varlıklarını veya birebir tasarımını kopyalama.
+
+---
+
+# BÖLÜM 3 — KAPSAMLI ARAYÜZ TASARIMI
+
+Mevcut uygulamanın tasarımını profesyonel seviyeye getir.
+
+## 3.1. Genel uygulama düzeni
+
+Masaüstünde uygun olduğunda şu bölümleri kullan:
+
+1. Sunucu gezinme alanı.
+2. Kanal ve özel mesaj listesi.
+3. Ana içerik ve mesajlaşma alanı.
+4. Gerektiğinde üye listesi veya yan panel.
+5. Bildirim ve kullanıcı kontrolleri.
+6. Profil ve ayarlar menüsü.
+
+Bütün bölümler gerektiğinde açılıp kapanabilmeli.
+
+Kullanıcı gereksiz yere yatay kaydırma yapmak zorunda kalmamalı.
+
+## 3.2. Tasarım sistemi
+
+Tutarlı tasarım değişkenleri oluştur:
+
+- Ana renk.
+- İkincil renk.
+- Vurgu rengi.
+- Arka plan renkleri.
+- Kart renkleri.
+- Kenarlıklar.
+- Yazı renkleri.
+- Başarı, uyarı ve hata renkleri.
+- Boşluk sistemi.
+- Köşe yuvarlaklıkları.
+- Gölge sistemi.
+- Yazı boyutları.
+- Animasyon süreleri.
+- Odak ve hover durumları.
+
+Renkler bütün sayfalarda tutarlı kullanılmalıdır.
+
+## 3.3. Tema sistemi
+
+Şunları destekle:
+
+- Koyu tema.
+- Açık tema.
+- Sistem temasını takip etme.
+- Kullanıcı tercihinin kalıcı olarak saklanması.
+- Erişilebilir renk kontrastları.
+- Tercihe bağlı vurgu rengi.
+- İsteğe bağlı profil ve arayüz özelleştirmeleri.
+
+## 3.4. Animasyonlar
+
+Uygun yerlerde hafif animasyonlar kullan:
+
+- Menü açılma ve kapanma.
+- Modal pencereler.
+- Sayfa geçişleri.
+- Bildirimler.
+- Yüklenme durumları.
+- Tepkiler.
+- Profil kartları.
+- Mesaj gönderimi.
+
+Animasyonlar performansı düşürmemeli.
+
+Azaltılmış hareket tercihini destekle.
+
+## 3.5. Bütün durumları tasarla
+
+Her ekranda aşağıdaki durumları ele al:
+
+- İlk yüklenme.
+- Veri yükleniyor.
+- İçerik bulunamadı.
+- Kullanıcı çevrimdışı.
+- Bağlantı kesildi.
+- İşlem başarısız.
+- İşlem başarılı.
+- Erişim reddedildi.
+- Kullanıcının yetkisi yok.
+- Veri henüz mevcut değil.
+- Dosya yükleniyor.
+- Dosya yükleme başarısız.
+- Oturum süresi doldu.
+
+Her hata mesajı kullanıcıya anlaşılır bir açıklama ve mümkünse tekrar deneme seçeneği sunmalıdır.
+
+---
+
+# BÖLÜM 4 — MOBİL UYUMLULUK
+
+Mobil kullanım birincil gereksinimdir.
+
+Özellikle iPhone Safari ve Android mobil tarayıcılarında uygulamanın düzgün çalışmasını sağla.
+
+## 4.1. Mobil gezinme
+
+Mobil ekranda masaüstü düzenini zorla kullanma.
+
+Bunun yerine uygun bir mobil gezinme sistemi oluştur:
+
+- Sunucular.
+- Mesajlar.
+- Bildirimler.
+- Arkadaşlar.
+- Profil ve ayarlar.
+
+Kullanıcı bulunduğu ekrandan diğer bölümlere rahatça geçebilmelidir.
+
+## 4.2. Mobil mesajlaşma
+
+- Mesaj kutusu klavye açıldığında görünür kalmalı.
+- Ekran klavyesi mesajları örtmemeli.
+- Uzun mesajlar taşma oluşturmamalı.
+- Mesaj menüleri dokunmatik kullanım için uygun olmalı.
+- Dosya yükleme mobil cihazlarda çalışmalı.
+- Görseller ekrana uygun boyutlandırılmalı.
+- Sohbet geçmişi düzgün kaydırılmalı.
+- Mesaj gönderildikten sonra uygun konuma kaydırılmalı.
+- Kullanıcının eski mesajları okurken konumu bozulmamalı.
+
+## 4.3. Mobil uyumluluk ayrıntıları
+
+- Güvenli ekran alanlarını dikkate al.
+- Gereksiz yatay kaydırmayı önle.
+- Dokunmatik hedefleri rahat kullanılır boyutta tut.
+- iOS klavye davranışlarını kontrol et.
+- Görüntülü görüşme kontrollerini küçük ekrana uyarla.
+- Yüksek çözünürlüklü görselleri optimize et.
+- Sayfa yenilendiğinde uygun kullanıcı durumunu geri yükle.
+- Mobil bağlantı kesilmelerinde dayanıklılığı artır.
+
+---
+
+# BÖLÜM 5 — KAYIT, GİRİŞ VE HESAP YÖNETİMİ
+
+Gerçek kullanıcıların hesap oluşturmasını sağlayan güvenli bir sistem oluştur.
+
+## 5.1. Kayıt
+
+Kayıt ekranında uygun şekilde:
+
+- Kullanıcı adı.
+- E-posta adresi.
+- Parola.
+- Parola doğrulaması.
+- Hizmet şartlarının kabulü.
+- Gizlilik politikasına erişim.
+- Gerekli doğrulama adımları.
+
+bulunmalıdır.
+
+Formlarda istemci ve sunucu tarafı doğrulama uygula.
+
+## 5.2. Giriş
+
+- E-posta ve parola ile giriş.
+- Oturumun güvenli şekilde yönetilmesi.
+- Hatalı giriş mesajları.
+- Oturumun sonlandırılması.
+- Süresi dolan oturumların yönetilmesi.
+- Gerektiğinde e-posta doğrulaması.
+
+Sosyal giriş gerekiyorsa yalnızca doğru yapılandırılmış OAuth akışlarını kullan.
+
+## 5.3. Hesap kurtarma
+
+- Parola sıfırlama talebi.
+- Güvenli sıfırlama bağlantısı.
+- Süresi sınırlı doğrulama tokenları.
+- E-posta doğrulama.
+- Kullanıcıya işlem sonucu bildirme.
+
+Kullanıcıların parolalarını düz metin olarak saklama.
+
+Parolaları uygun güvenli parola hash mekanizmasıyla işle.
+
+## 5.4. Kullanıcı adı sistemi
+
+- Benzersiz kullanıcı kimliği.
+- Uygun kullanıcı adı doğrulaması.
+- İsim değiştirme.
+- İsim değişikliği sınırları.
+- Uygunsuz kullanıcı adları için kurallar.
+- Kullanıcı arama.
+- Kullanıcı profil bağlantıları.
+
+Kullanıcı kimliğini yalnızca görünen kullanıcı adına bağlama.
+
+## 5.5. Hesap ayarları
+
+- Profil düzenleme.
+- E-posta yönetimi.
+- Parola değiştirme.
+- Oturum yönetimi.
+- Gizlilik tercihleri.
+- Bildirim tercihleri.
+- Engellenen kullanıcılar.
+- Veri indirme talebi.
+- Hesap silme.
+- Hesap devre dışı bırakma gerekiyorsa güvenli iş akışı.
+
+Hesap silme işlemlerini ilişkili veriler, yasal saklama gereklilikleri ve gizlilik açısından dikkatle ele al.
+
+---
+
+# BÖLÜM 6 — KULLANICI PROFİLLERİ
+
+Her kullanıcının ayrıntılı ve kişiselleştirilebilir bir profili olmalıdır.
+
+Profil özellikleri:
+
+- Avatar.
+- Görünen ad.
+- Benzersiz kullanıcı adı.
+- Biyografi.
+- Durum mesajı.
+- Çevrimiçi durumu.
+- Profil bannerı.
+- Katılınan topluluklar.
+- Arkadaşlık durumu.
+- Rozetler.
+- Kullanıcıya ait isteğe bağlı oyun veya ilgi alanları.
+- Hesap oluşturma tarihi gerektiğinde.
+- Profil gizlilik seçenekleri.
+
+Profil fotoğrafı yükleme ve değiştirme çalışmalıdır.
+
+Dosya boyutu, dosya türü ve görsel boyutları kontrol edilmelidir.
+
+Başka kullanıcıların özel bilgilerini yetkisiz şekilde gösterme.
+
+Kullanıcı kendi profil bilgilerinin hangilerinin herkese açık olacağını belirleyebilmelidir.
+
+---
+
+# BÖLÜM 7 — ARKADAŞLIK SİSTEMİ
+
+Gerçek çalışan bir arkadaşlık sistemi oluştur.
+
+Özellikler:
+
+- Kullanıcı arama.
+- Arkadaşlık isteği gönderme.
+- Gelen istekleri görüntüleme.
+- İsteği kabul etme.
+- İsteği reddetme.
+- İsteği iptal etme.
+- Arkadaşı kaldırma.
+- Arkadaş listesi.
+- Çevrimiçi arkadaşlar.
+- Son görülme ayarları.
+- Engelleme.
+- Engeli kaldırma.
+- Bekleyen istekler.
+- Bildirimler.
+
+Arkadaşlık durumları veritabanında tutarlı şekilde saklanmalıdır.
+
+Tekrarlanan veya çelişkili arkadaşlık kayıtları oluşmamalıdır.
+
+Kullanıcılar kendilerine istek gönderememeli.
+
+Engellenen kullanıcılar için uygun iletişim kısıtlamaları uygulanmalıdır.
+
+---
+
+# BÖLÜM 8 — GERÇEK ZAMANLI MESAJLAŞMA
+
+Bu bölüm ORBIT'in en önemli bileşenlerinden biridir.
+
+## 8.1. Özel mesajlaşma
+
+- Bire bir mesajlaşma.
+- Grup sohbetleri.
+- Sohbet oluşturma.
+- Sohbet geçmişi.
+- Son mesaj bilgisi.
+- Son mesaj zamanı.
+- Okunmamış mesaj sayısı.
+- Mesaj arama.
+- Sohbeti sabitleme.
+- Sohbet listesini düzenleme.
+- Sohbeti arşivleme.
+- Sohbeti kapatma.
+- Sohbet bildirimlerini sessize alma.
+
+## 8.2. Mesaj gönderme
+
+Mesajlar şu özellikleri desteklemelidir:
+
+- Metin.
+- Satır sonları.
+- Emoji.
+- Emoji tepkileri.
+- Bağlantılar.
+- Mesaj yanıtları.
+- Alıntı.
+- Mesaj düzenleme.
+- Mesaj silme.
+- Mesaj sabitleme.
+- Mesaj iletme.
+- Tarih ve saat.
+- Gönderim durumu.
+- Hata durumu.
+- Kullanıcı bahsetmeleri.
+- Kanal bahsetmeleri.
+- İzin verilen durumlarda dosya ekleri.
+
+## 8.3. Mesaj yönetimi
+
+Mesaj menüsünde uygun yetkiye göre:
+
+- Yanıtla.
+- Kopyala.
+- Bağlantıyı kopyala.
+- Düzenle.
+- Sil.
+- Sabitle.
+- Sabitlemeyi kaldır.
+- İlet.
+- Tepki ekle.
+- Şikâyet et.
+
+seçenekleri sun.
+
+Kullanıcının yalnızca izin verilen mesajları düzenlemesine veya silmesine izin ver.
+
+Yönetici işlemlerini yetkilendirme kurallarıyla kontrol et.
+
+## 8.4. Gerçek zamanlı davranış
+
+- Mesajlar diğer kullanıcıya gerçek zamanlı ulaşmalı.
+- Yeni mesajlar kalıcı veritabanına yazılmalı.
+- Mesaj geçmişi sayfa yenilendiğinde korunmalı.
+- Bağlantı kesilirse tekrar bağlanma denenmeli.
+- Aynı mesajın tekrar tekrar oluşturulması engellenmeli.
+- Mesaj gönderim hataları kullanıcıya bildirilmeli.
+- Çevrimdışı kullanıcı için uygun teslim ve bildirim davranışı uygulanmalı.
+- Mesajlar zaman damgasına göre doğru sıralanmalı.
+- Çok uzun sohbet geçmişleri sayfalama yöntemiyle yüklenmeli.
+
+Gerçek zamanlı veri altyapısını mevcut backend ile uyumlu seç.
+
+## 8.5. Yazıyor göstergesi
+
+Bir kullanıcı yazarken karşı tarafta yazıyor bilgisi göster.
+
+Bu durum geçici olmalıdır.
+
+Yazıyor göstergelerini kalıcı veritabanı kayıtlarına dönüştürme.
+
+Gereksiz ağ trafiği oluşturma.
+
+## 8.6. Okundu bilgisi
+
+- Okunmamış mesajlar.
+- Okundu durumu.
+- Son okunan mesaj.
+- Okunmamış mesaj sayısı.
+- Sohbete dönüldüğünde güncelleme.
+
+Okundu bilgisi gizlilik ayarlarıyla uyumlu olmalıdır.
+
+## 8.7. Emoji ve GIF
+
+- Emoji seçici.
+- Son kullanılan emojiler.
+- Mesaj tepkileri.
+- Birden fazla kullanıcının aynı tepkiyi eklemesi.
+- Tepki sayısı.
+- GIF arama ve paylaşma için uygun servis entegrasyonu.
+
+Harici GIF servislerinin API anahtarlarını istemciye yerleştirme.
+
+---
+
+# BÖLÜM 9 — DOSYA, FOTOĞRAF VE VİDEO PAYLAŞIMI
+
+Kullanıcılar mesajlarda ve izin verilen kanallarda dosya paylaşabilmelidir.
+
+Desteklenecek dosyalar:
+
+- Görseller.
+- Videolar.
+- Ses dosyaları.
+- Belgeler.
+- İzin verilen diğer dosya türleri.
+
+Gereksinimler:
+
+- Dosya seçme.
+- Yükleme ilerlemesi.
+- Yükleme iptali.
+- Yükleme hatası.
+- Dosya boyutu sınırı.
+- MIME türü kontrolü.
+- Dosya uzantısı kontrolü.
+- Güvenli depolama.
+- Dosya görüntüleme.
+- İndirme.
+- Yetkili dosya erişimi.
+- Gerektiğinde geçici indirme bağlantıları.
+
+Dosya türünü yalnızca dosya uzantısına bakarak doğrulama.
+
+Tehlikeli dosyaların doğrudan çalıştırılmasına izin verme.
+
+Dosya erişimini ilgili sohbet veya kanal izinleriyle sınırlandır.
+
+Dosyalar herkese açık olmaması gerekirken herkese açık URL'lerle sunulmamalıdır.
+
+---
+
+# BÖLÜM 10 — SUNUCU VE TOPLULUK SİSTEMİ
+
+ORBIT, kullanıcıların kendi topluluklarını oluşturmasına izin vermelidir.
+
+## 10.1. Sunucu oluşturma
+
+- Sunucu oluşturma.
+- Sunucu adı.
+- Sunucu açıklaması.
+- Sunucu ikonu.
+- Sunucu bannerı.
+- Sunucu ayarları.
+- Sunucu sahipliği.
+- Sunucuya davet.
+- Sunucudan ayrılma.
+- Sunucuyu silme.
+- Sahipliği devretme.
+
+Silme ve sahiplik devri gibi kritik işlemlerde onay iste.
+
+## 10.2. Davet sistemi
+
+- Davet bağlantısı üretme.
+- Davet kodu.
+- Davet bağlantısını kopyalama.
+- Süre sınırı.
+- Kullanım sınırı.
+- Daveti iptal etme.
+- Davet eden kullanıcı bilgisi.
+- Davet geçerliliğini kontrol etme.
+- Yasaklı kullanıcıların katılımını engelleme.
+- Gerektiğinde sunucuya katılım onayı.
+
+Davet kodları tahmin edilmesi zor olmalıdır.
+
+Davet kullanım sınırları sunucu tarafında uygulanmalıdır.
+
+## 10.3. Kanal sistemi
+
+Kanal türleri:
+
+- Metin.
+- Ses.
+- Duyuru.
+- Forum.
+- Özel kanal.
+- Gerektiğinde etkinlik kanalı.
+
+Kanal işlemleri:
+
+- Kanal oluşturma.
+- Kanal düzenleme.
+- Kanal silme.
+- Kanal sıralama.
+- Kanalı kategoriye taşıma.
+- Kanalı kilitleme.
+- Kanal izinleri.
+- Konu veya açıklama belirleme.
+- Kanalı sabitleme.
+
+## 10.4. Kategoriler
+
+- Kategori oluşturma.
+- Kategori adını değiştirme.
+- Kategori sıralama.
+- Kategoriye kanal ekleme.
+- Kategoriye özel izinler.
+- Kategori içindeki kanalları açma ve kapatma.
+
+## 10.5. Sunucu üyeleri
+
+- Üye listesi.
+- Üye arama.
+- Üye profili.
+- Rol görüntüleme.
+- Üye davet etme.
+- Üyeyi sunucudan çıkarma.
+- Üyeyi yasaklama.
+- Yasaklamayı kaldırma.
+- Üyeyi susturma.
+- Üye hareketlerini denetleme.
+
+Her işlem kullanıcı yetkisine göre kontrol edilmelidir.
+
+---
+
+# BÖLÜM 11 — ROLLER VE GELİŞMİŞ İZİN SİSTEMİ
+
+Esnek bir rol ve izin sistemi oluştur.
+
+Varsayılan roller:
+
+- Sunucu sahibi.
+- Yönetici.
+- Moderatör.
+- Üye.
+- Misafir.
+
+Sunucu yöneticisi özel roller oluşturabilmelidir.
+
+Rol özellikleri:
+
+- Rol adı.
+- Rol rengi.
+- Rol sırası.
+- Rol simgesi gerekiyorsa.
+- Üyelere rol atama.
+- Rolü kaldırma.
+- Rol izinlerini düzenleme.
+
+Örnek izinler:
+
+- Sunucuyu yönetme.
+- Kanalları yönetme.
+- Rolleri yönetme.
+- Üyeleri çıkarma.
+- Üyeleri yasaklama.
+- Mesajları silme.
+- Mesaj sabitleme.
+- Davet oluşturma.
+- Dosya gönderme.
+- Mesaj gönderme.
+- Sesli kanala katılma.
+- Kamera kullanma.
+- Ekran paylaşma.
+- Etkinlik oluşturma.
+- Yönetim kayıtlarını görüntüleme.
+
+Kritik güvenlik kuralları:
+
+- Hiçbir kullanıcı kendi yetkisini yükseltememeli.
+- Yönetici rolü yalnızca yetkili kullanıcılar tarafından atanabilmeli.
+- Rol hiyerarşisi sunucu tarafında doğrulanmalı.
+- Kullanıcı kendisinden daha yüksek yetkili rolleri yönetememeli.
+- İzin kontrolleri yalnızca istemci arayüzüne bırakılmamalı.
+- Yetkisiz API istekleri reddedilmeli.
+
+---
+
+# BÖLÜM 12 — SESLİ KANALLAR VE GERÇEK ZAMANLI SES
+
+Sesli kanallar yalnızca görsel tasarım olmamalıdır.
+
+Gerçek kullanıcıların birbirini duyabilmesini sağlayan bir iletişim altyapısı oluştur.
+
+## 12.1. Sesli kanal özellikleri
+
+- Sesli kanala katılma.
+- Kanaldan ayrılma.
+- Katılımcıları görüntüleme.
+- Mikrofonu kapatma.
+- Mikrofonu açma.
+- Konuşma göstergesi.
+- Ses bağlantı durumu.
+- Katılımcı sayısı.
+- Ses seviyesini ayarlama.
+- Sesli kanala erişim izinleri.
+- Bağlantı kesildiğinde toparlanma.
+
+## 12.2. WebRTC
+
+Mevcut mimariye uygun olduğunda WebRTC kullan.
+
+Gerektiğinde şu bileşenleri oluştur:
+
+- Sinyalizasyon sistemi.
+- Bağlantı kurma ve kapatma.
+- Teklif ve yanıt mesajları.
+- ICE adaylarının iletilmesi.
+- STUN yapılandırması.
+- Üretim ortamında gerektiğinde TURN servisi.
+- Bağlantı hata yönetimi.
+- Çok kullanıcılı görüşmeler için uygun medya mimarisi.
+
+Çok kullanıcılı sesli kanallarda bağlantı sayısını ve bant genişliğini dikkate al.
+
+Gerekirse SFU tabanlı bir medya sunucusu kullan.
+
+STUN/TURN veya medya sunucusu gerekiyorsa hangi hizmetin kurulması gerektiğini açıkça belirt.
+
+Çalışmayan bir sesli kanalı gerçekmiş gibi göstermeye çalışma.
+
+---
+
+# BÖLÜM 13 — GÖRÜNTÜLÜ GÖRÜŞME VE EKRAN PAYLAŞIMI
+
+Görüntülü görüşme özellikleri:
+
+- Bire bir görüntülü arama.
+- Grup görüntülü görüşmesi.
+- Kamerayı açma ve kapatma.
+- Mikrofonu açma ve kapatma.
+- Görüşmeden ayrılma.
+- Katılımcıları görüntüleme.
+- Görüşme süresi.
+- Bağlantı kalitesi göstergesi.
+- Kamera ve mikrofon izinlerini yönetme.
+- Görüşme bağlantı hataları.
+- Gerektiğinde yeniden bağlanma.
+
+Ekran paylaşımı:
+
+- Ekran paylaşımını başlatma.
+- Ekran paylaşımını durdurma.
+- Paylaşılan ekranı izleme.
+- Kullanıcı ekran paylaşımı izni.
+- Mobil cihazlardaki sınırlamaları ele alma.
+- Tarayıcı izinlerini doğru yönetme.
+
+Güvenlik ve gizlilik:
+
+- Kamera ve mikrofon yalnızca kullanıcı izin verdiğinde etkinleşmeli.
+- Kullanıcıya kameranın veya mikrofonun etkin olduğu açıkça gösterilmeli.
+- Görüşmeden ayrılınca medya kaynakları serbest bırakılmalı.
+- İzin verilmeyen kullanıcılar görüşmeye katılamamalı.
+
+---
+
+# BÖLÜM 14 — BİLDİRİM SİSTEMİ
+
+Merkezi bir bildirim sistemi oluştur.
+
+Bildirim türleri:
+
+- Yeni özel mesaj.
+- Grup mesajı.
+- Kullanıcı bahsetmesi.
+- Kanal bahsetmesi.
+- Arkadaşlık isteği.
+- Arkadaşlık isteği kabulü.
+- Sunucu daveti.
+- Sunucu etkinliği.
+- Moderasyon bildirimi.
+- Güvenlik uyarısı.
+
+Bildirim özellikleri:
+
+- Okundu ve okunmadı durumu.
+- Tümünü okundu işaretleme.
+- Bildirimleri silme.
+- Bildirim türlerini açıp kapatma.
+- Bildirim geçmişi.
+- Bildirim merkezi.
+- Okunmamış bildirim sayısı.
+
+Tarayıcı bildirimleri için izin iste.
+
+Web Push gerekiyorsa gerekli servis çalışanı ve sunucu tarafı bildirim altyapısını kur.
+
+Web Push bildirimlerini desteklenmeyen ortamlarda çalışıyor gibi gösterme.
+
+Gizlilik ayarlarına uy.
+
+---
+
+# BÖLÜM 15 — ARAMA VE KEŞİF
+
+Uygulama içinde kapsamlı arama sistemi oluştur.
+
+Arama alanları:
+
+- Kullanıcılar.
+- Sunucular.
+- Kanallar.
+- Mesajlar.
+- Dosya adları.
+- İzin verilen bağlantılar.
+- Forum gönderileri.
+
+Filtreler:
+
+- Kullanıcıya göre.
+- Tarihe göre.
+- Kanala göre.
+- Sunucuya göre.
+- Mesaj türüne göre.
+- Ek içeren mesajlara göre.
+
+Arama sonuçları kullanıcının erişim izinleriyle sınırlandırılmalıdır.
+
+Kullanıcı özel kanallardaki mesajları yetkisiz olarak arayamamalıdır.
+
+## Sunucu keşfi
+
+- Herkese açık sunucuları listeleme.
+- Kategori filtreleri.
+- İlgi alanlarına göre arama.
+- Üye sayısı.
+- Sunucu açıklaması.
+- Sunucuya katılma.
+- Uygunsuz toplulukları bildirme.
+- Gizli sunucuları keşif sonuçlarından çıkarma.
+
+Özel sunucular varsayılan olarak herkese açık biçimde listelenmemelidir.
+
+---
+
+# BÖLÜM 16 — FORUMLAR, DUYURULAR VE ETKİNLİKLER
+
+## Forum sistemi
+
+- Forum gönderisi oluşturma.
+- Başlık ve açıklama.
+- Gönderilere yanıt verme.
+- Tepkiler.
+- Sabitleme.
+- Kategoriler.
+- Arama.
+- Moderasyon.
+- Görsel ekleme.
+- Gönderi düzenleme.
+
+## Duyuru sistemi
+
+- Duyuru kanalı.
+- Yetkili gönderim.
+- Duyuru sabitleme.
+- Duyuru bildirimleri.
+- İsteğe bağlı duyuruyu takip etme.
+
+## Etkinlik sistemi
+
+- Etkinlik oluşturma.
+- Başlık.
+- Açıklama.
+- Tarih ve saat.
+- Saat dilimi.
+- Etkinlik yeri veya çevrim içi bağlantı.
+- Katılıyorum seçeneği.
+- Katılmıyorum seçeneği.
+- Katılımcı listesi.
+- Hatırlatıcı.
+- Etkinliği düzenleme.
+- Etkinliği iptal etme.
+
+Tarih ve saatleri tutarlı biçimde sakla ve kullanıcıya uygun saat diliminde göster.
+
+---
+
+# BÖLÜM 17 — TOPLULUK AKIŞI
+
+İsteğe bağlı sosyal topluluk akışı oluştur.
+
+Özellikler:
+
+- Gönderi oluşturma.
+- Metin ve görsel paylaşımı.
+- Gönderiye tepki verme.
+- Yorum yapma.
+- Yorumlara yanıt verme.
+- Gönderi düzenleme.
+- Gönderi silme.
+- Kullanıcıyı takip etme, gerekiyorsa.
+- Gönderi bildirme.
+- İçerik moderasyonu.
+
+İçerik erişimini gizlilik ve izinlerle kontrol et.
+
+İzinsiz içerik paylaşımına veya sahte etkileşim sayılarına izin verme.
+
+---
+
+# BÖLÜM 18 — XP, SEVİYE, ROZET VE ÖDÜLLER
+
+İsteğe bağlı oyunlaştırma sistemi oluştur.
+
+Özellikler:
+
+- Deneyim puanı.
+- Seviye.
+- Seviye ilerleme çubuğu.
+- Başarı rozetleri.
+- Topluluk başarıları.
+- Profilde rozet gösterimi.
+- İsteğe bağlı liderlik tablosu.
+
+Kurallar:
+
+- XP hesaplaması sunucu tarafında yapılmalı.
+- Spam mesajlar sınırsız XP kazandırmamalı.
+- Aynı işlemin tekrar gönderilmesiyle puan çoğaltılmamalı.
+- Ödüller denetlenebilir olmalı.
+- Moderatörler gerekiyorsa puan manipülasyonunu inceleyebilmeli.
+
+---
+
+# BÖLÜM 19 — BOT VE ENTEGRASYON SİSTEMİ
+
+Gelecekte genişletilebilir bir bot altyapısı oluştur.
+
+Özellikler:
+
+- Bot hesabı.
+- Bot kimliği.
+- Bot izinleri.
+- Botu sunucuya ekleme.
+- Botu sunucudan kaldırma.
+- Komut sistemi.
+- Olay sistemi.
+- Gerekirse webhooklar.
+- API erişim politikaları.
+- Bot kullanım kayıtları.
+- İstek hız sınırlandırması.
+
+Bot tokenlarını yalnızca güvenli biçimde sakla.
+
+Botların kullanıcı yetkilerini aşmasına izin verme.
+
+Gereksiz yere bütün API erişimini herkese açma.
+
+Mevcut projede gerçek bir bot çalışma altyapısı yoksa bunu açıkça belirt ve uygun mimariyi oluştur.
+
+---
+
+# BÖLÜM 20 — YAPAY ZEKÂ ÖZELLİKLERİ
+
+İsteğe bağlı yapay zekâ asistanı ekle.
+
+Özellikler:
+
+- Kullanıcı sorularını yanıtlama.
+- Uzun sohbetleri özetleme.
+- İzin verilen mesajları arama konusunda yardımcı olma.
+- Topluluk kuralları hakkında bilgi verme.
+- Moderatörlere içerik incelemede yardımcı olma.
+- Etkinlik açıklaması oluşturma.
+- Mesaj taslağı önerme.
+
+Güvenlik:
+
+- API anahtarlarını istemciye koyma.
+- Anahtarları güvenli sunucu tarafında sakla.
+- Kullanım limitleri uygula.
+- Hata ve kota durumlarını ele al.
+- Kullanıcının erişemediği mesajları yapay zekâya gönderme.
+- Özel mesajları kullanıcı izni ve gizlilik ilkeleri olmadan analiz etme.
+- Yapay zekâ tarafından üretilen içeriği gerçek kullanıcı mesajı olarak otomatik yayımlama.
+
+Ücretli API gerekiyorsa bunu açıkça bildir.
+
+API anahtarı bulunmuyorsa yapay zekâ özelliğini çalışıyormuş gibi gösterme.
+
+---
+
+# BÖLÜM 21 — MODERASYON VE KULLANICI GÜVENLİĞİ
+
+Kapsamlı moderasyon araçları oluştur.
+
+Özellikler:
+
+- Kullanıcı şikâyeti.
+- Mesaj şikâyeti.
+- Sunucu şikâyeti.
+- Spam tespiti.
+- Mesaj gönderme hız sınırları.
+- Kullanıcıyı susturma.
+- Kullanıcıyı sunucudan çıkarma.
+- Kullanıcıyı yasaklama.
+- Yasağı kaldırma.
+- Mesaj silme.
+- Kanalları kilitleme.
+- Davetleri iptal etme.
+- Moderasyon geçmişi.
+- İtiraz mekanizması gerekiyorsa.
+- Şikâyetlerin durum takibi.
+
+Şikâyet kategorileri uygun şekilde düzenlenmelidir.
+
+Şikâyetleri yalnızca yetkili kullanıcılar inceleyebilmelidir.
+
+Moderasyon işlemlerinde neden ve zaman bilgisi tutulmalıdır.
+
+Yetkisiz kişilere gizli moderasyon kayıtlarını gösterme.
+
+---
+
+# BÖLÜM 22 — YÖNETİCİ PANELİ
+
+Yetkili yöneticiler için ayrı bir yönetim paneli oluştur.
+
+Özellikler:
+
+- Kullanıcı yönetimi.
+- Sunucu yönetimi.
+- Şikâyet inceleme.
+- Moderasyon işlemleri.
+- Sistem sağlık durumu.
+- Hata kayıtları.
+- Kullanıcı ve sunucu istatistikleri.
+- İstek ve kullanım istatistikleri.
+- Güvenlik olayları.
+- Rol ve izin yönetimi.
+- Gerektiğinde bakım modu.
+
+Yönetim paneli yalnızca yetkili yöneticiler tarafından erişilebilir olmalıdır.
+
+Yönetici yetkisi yalnızca istemcideki bir değişkenle belirlenmemelidir.
+
+Yönetici işlemleri sunucu tarafında doğrulanmalı ve kritik işlemler kayıt altına alınmalıdır.
+
+---
+
+# BÖLÜM 23 — VERİTABANI MİMARİSİ
+
+Öncelikle mevcut veritabanını incele.
+
+Yeni bir veritabanı oluşturmak yerine mevcut sistemin eksiklerini gider.
+
+Gerektiğinde aşağıdaki mantıksal varlıkları kullan:
+
+- users
+- profiles
+- user_settings
+- user_sessions
+- friendships
+- blocked_users
+- conversations
+- conversation_members
+- messages
+- message_reactions
+- message_attachments
+- read_receipts
+- servers
+- server_members
+- server_invites
+- channels
+- channel_categories
+- channel_members
+- roles
+- permissions
+- member_roles
+- channel_overrides
+- notifications
+- notification_preferences
+- reports
+- moderation_actions
+- events
+- event_attendees
+- forum_posts
+- forum_replies
+- bot_accounts
+- webhooks
+- user_badges
+- user_experience
+- audit_logs
+
+Bu liste mevcut mimariye göre uyarlanmalıdır. Her tabloyu zorunlu olarak oluşturma.
+
+Veritabanı tasarımında:
+
+- Birincil anahtarlar.
+- Yabancı anahtarlar.
+- Benzersizlik kısıtlamaları.
+- Uygun indeksler.
+- Veri bütünlüğü.
+- Sayfalama.
+- Sorgu performansı.
+- Güvenli erişim.
+- Gerektiğinde işlem bütünlüğü.
+
+dikkate alınmalıdır.
+
+Veritabanı şema değişikliklerini kontrollü migration dosyalarıyla gerçekleştir.
+
+Mevcut verileri silen veya yeniden oluşturan işlemlerden kaçın.
+
+## Veritabanı güvenliği
+
+- Satır seviyesinde güvenlik gereken yerlerde RLS uygula.
+- Kullanıcının yalnızca erişme yetkisi olan verileri okuyabilmesini sağla.
+- Yazma işlemlerinde yetki kontrolü uygula.
+- Hassas tabloları herkese açma.
+- Yönetici işlemlerini ayrıca doğrula.
+- Gizli anahtarları güvenli sunucu ortamında tut.
+
+---
+
+# BÖLÜM 24 — BACKEND VE API
+
+Backend işlemlerini düzenli ve güvenli şekilde yapılandır.
+
+Gereksinimler:
+
+- Kimlik doğrulama.
+- Yetkilendirme.
+- Girdi doğrulama.
+- Tutarlı hata mesajları.
+- İstek sınırlandırması.
+- Güvenli oturum yönetimi.
+- Veritabanı erişim kontrolü.
+- Dosya yükleme güvenliği.
+- Gerçek zamanlı olaylar.
+- Loglama.
+- API sürümleme gerektiğinde.
+- Gerektiğinde idempotent işlemler.
+- İşlem başarısızlıklarının doğru yönetimi.
+
+API anahtarlarını istemci koduna yazma.
+
+Gizli servis anahtarlarını HTML, JavaScript paketi veya herkese açık yapılandırma dosyalarına ekleme.
+
+İstemciden gelen kullanıcı kimliğine tek başına güvenme. Kimliği doğrulanmış oturumla ilişkilendir.
+
+Her API işleminde kullanıcının ilgili kaynağa erişim yetkisini doğrula.
+
+---
+
+# BÖLÜM 25 — GÜVENLİK DENETİMİ
+
+Aşağıdaki güvenlik sorunlarını araştır ve düzelt:
+
+- Yetkisiz veri erişimi.
+- Başka kullanıcının mesajlarını değiştirme.
+- Başka kullanıcının profilini izinsiz değiştirme.
+- Yetkisiz yönetici işlemleri.
+- Rol yükseltme.
+- Güvensiz dosya yükleme.
+- XSS.
+- CSRF gereken akışlarda.
+- SQL injection veya benzeri sorgu güvenliği sorunları.
+- Açık API anahtarları.
+- Aşırı istek gönderimi.
+- Oturum yönetimi hataları.
+- Güvensiz yönlendirmeler.
+- Davet kodu kötüye kullanımı.
+- Güvenilmeyen içeriklerin işlenmesi.
+
+Kullanılan teknolojiye uygun güvenlik önlemlerini uygula.
+
+Güvenlik kontrollerinin gerçek ortamda da etkin olduğunu doğrula.
+
+---
+
+# BÖLÜM 26 — PERFORMANS VE ÖLÇEKLENEBİLİRLİK
+
+Uygulamayı gereksiz kaynak tüketiminden koru.
+
+- Gereksiz yeniden render işlemlerini azalt.
+- Büyük mesaj listelerini sayfala.
+- Görselleri optimize et.
+- Gereksiz ağ isteklerini azalt.
+- Arama sorgularını optimize et.
+- Uygun indeksleri kullan.
+- Büyük dosyaları veritabanında doğrudan saklamak yerine uygun dosya depolama kullan.
+- Gerçek zamanlı abonelikleri gerektiğinde sınırlandır.
+- Kullanılmayan bağlantıları temizle.
+- Bellek sızıntılarını araştır.
+- Gerektiğinde önbellekleme kullan.
+- Mobil ağ koşullarını dikkate al.
+
+Performans iyileştirmeleri mevcut işlevlerin doğruluğunu bozmamalıdır.
+
+---
+
+# BÖLÜM 27 — ERİŞİLEBİLİRLİK VE KULLANILABİLİRLİK
+
+- Klavye ile gezinme.
+- Görünür odak göstergeleri.
+- Form etiketleri.
+- Anlaşılır hata mesajları.
+- Uygun renk kontrastları.
+- Ekran okuyucu etiketleri.
+- Modal pencerelerde odak yönetimi.
+- Azaltılmış hareket tercihi.
+- Mobil dokunmatik kullanım.
+- Tutarlı simgeler ve açıklamalar.
+
+Yalnızca renkle bilgi verme.
+
+Önemli işlemler için anlaşılır metinler kullan.
+
+---
+
+# BÖLÜM 28 — TEST VE HATA DÜZELTME
+
+Geliştirme sırasında gerçek testler gerçekleştir.
+
+## Fonksiyonel testler
+
+- Kayıt olma.
+- Giriş yapma.
+- Çıkış yapma.
+- Parola sıfırlama.
+- Profil düzenleme.
+- Arkadaşlık isteği gönderme.
+- Arkadaşlık isteğini kabul etme.
+- Özel mesaj gönderme.
+- Mesaj düzenleme.
+- Mesaj silme.
+- Dosya yükleme.
+- Sunucu oluşturma.
+- Sunucuya katılma.
+- Kanal oluşturma.
+- Rol atama.
+- İzin kontrolü.
+- Bildirim alma.
+- Kullanıcıyı engelleme.
+- Şikâyet oluşturma.
+
+## Gerçek zamanlı testler
+
+- İki farklı hesapla mesajlaşma.
+- Mesajların karşı tarafa ulaşması.
+- Aynı mesajın tekrar oluşmaması.
+- Bağlantı kesildiğinde toparlanma.
+- Çevrimiçi durumun güncellenmesi.
+- Sesli görüşme bağlantısı.
+- Kamera ve mikrofon izinleri.
+- Ekran paylaşımı.
+
+## Güvenlik testleri
+
+- Yetkisiz API isteği.
+- Başka kullanıcıya ait veriye erişme girişimi.
+- Rol yükseltme girişimi.
+- Yetkisiz dosya erişimi.
+- Spam istekleri.
+- Oturum süresi dolması.
+- Sunucu ve kanal izinleri.
+
+## Arayüz testleri
+
+- Küçük ekran.
+- Büyük ekran.
+- iPhone Safari.
+- Android tarayıcısı.
+- Masaüstü tarayıcısı.
+- Klavye açılması.
+- Uzun mesajlar.
+- Uzun kullanıcı adları.
+- Hata durumları.
+- Boş listeler.
+
+Test araçları mevcut değilse uygun test altyapısını ekle veya yapılması gereken manuel testleri açıkça belirt.
+
+Gerçekleştirmediğin testleri başarılı olarak raporlama.
+
+---
+
+# BÖLÜM 29 — HATA YÖNETİMİ VE KOD KALİTESİ
+
+Projede şu sorunları araştır:
+
+- Eksik importlar.
+- Bozuk bileşenler.
+- Yanlış tür tanımları.
+- Çalışmayan butonlar.
+- Hatalı yönlendirmeler.
+- Bozuk formlar.
+- Eksik hata yakalama.
+- Konsol hataları.
+- Veritabanı sorgu hataları.
+- Gerçek zamanlı bağlantı sorunları.
+- Mobil taşmalar.
+- Bozuk yüklenme durumları.
+- Tekrarlanan kodlar.
+- Kullanılmayan bağımlılıklar.
+- Güvensiz yapılandırmalar.
+
+Kodun okunabilirliğini artır.
+
+Gereksiz dosya silme.
+
+Mevcut çalışan işlevleri doğrulamadan büyük refactor işlemleri yapma.
+
+Her değişiklikte uygulamanın derlenebilir ve çalışabilir kalmasına öncelik ver.
+
+---
+
+# BÖLÜM 30 — YAYINLAMA VE ÜRETİM ORTAMI
+
+Mevcut projenin dağıtım yöntemini incele.
+
+Uygulamayı uygun bir üretim ortamında yayınlanabilir hâle getir.
+
+Gereksinimler:
+
+- Üretim derlemesi.
+- Ortam değişkenleri.
+- Güvenli yapılandırma.
+- Veritabanı bağlantısı.
+- Gerekli migration işlemleri.
+- Dosya depolama yapılandırması.
+- Gerçek zamanlı servis yapılandırması.
+- Hata logları.
+- Sağlık kontrolü.
+- HTTPS.
+- Alan adı yapılandırmasına uygunluk.
+- Üretim ortamı güvenliği.
+
+Yayınlama platformunun mevcut proje yapısını desteklediğini doğrula.
+
+Ücretli servis veya ücretli özellik gerekiyorsa açıkça bildir.
+
+Yayınlama yetkisi veya gerekli bağlantılar mevcut değilse kullanıcı adına yayınlama yaptığını iddia etme.
+
+Gerekli manuel işlemleri adım adım açıkla.
+
+---
+
+# BÖLÜM 31 — SON KONTROL LİSTESİ
+
+Projeyi tamamlamadan önce aşağıdakileri kontrol et.
+
+[ ] Mevcut uygulama incelendi.
+
+[ ] Çalışan özellikler korundu.
+
+[ ] Giriş ve kayıt akışları çalışıyor.
+
+[ ] Veritabanı kalıcı veri saklıyor.
+
+[ ] Mesajlaşma gerçek zamanlı çalışıyor.
+
+[ ] Mesaj geçmişi korunuyor.
+
+[ ] Arkadaşlık sistemi çalışıyor.
+
+[ ] Sunucu oluşturma çalışıyor.
+
+[ ] Kanal oluşturma çalışıyor.
+
+[ ] Rol ve izin sistemi doğrulanıyor.
+
+[ ] Dosya yükleme güvenli.
+
+[ ] Bildirimler çalışıyor.
+
+[ ] Kullanıcı profilleri düzenlenebiliyor.
+
+[ ] Mobil arayüz kontrol edildi.
+
+[ ] Sesli görüşme altyapısı test edildi.
+
+[ ] Görüntülü görüşme altyapısı test edildi.
+
+[ ] Ekran paylaşımı kontrol edildi.
+
+[ ] Moderasyon sistemi çalışıyor.
+
+[ ] Yönetici paneli yetkilendirildi.
+
+[ ] Güvenlik kontrolleri uygulandı.
+
+[ ] Hatalar düzeltildi.
+
+[ ] Üretim derlemesi kontrol edildi.
+
+[ ] Yayınlama gereksinimleri belirlendi.
+
+Her maddeyi yalnızca gerçekten doğrulandığında tamamlanmış kabul et.
+
+---
+
+# BÖLÜM 32 — GELİŞTİRME YÖNTEMİ
+
+Şimdi aşağıdaki sırayla çalış.
+
+AŞAMA 1:
+Mevcut proje dosyalarını, teknolojileri, backend'i, veritabanını ve çalışan özellikleri analiz et.
+
+AŞAMA 2:
+Eksikleri belirle. Kritik hataları ve güvenlik açıklarını önce düzelt.
+
+AŞAMA 3:
+Kimlik doğrulama, veritabanı ve temel veri modellerini sağlamlaştır.
+
+AŞAMA 4:
+Mesajlaşma, arkadaşlık ve sunucu sistemlerini tamamla.
+
+AŞAMA 5:
+Kanallar, roller ve izin sistemini tamamla.
+
+AŞAMA 6:
+Dosya paylaşımı ve bildirimleri geliştir.
+
+AŞAMA 7:
+Mobil arayüzü ve tasarım sistemini iyileştir.
+
+AŞAMA 8:
+Sesli ve görüntülü iletişim altyapısını tamamla.
+
+AŞAMA 9:
+Moderasyon, yönetici paneli ve gelişmiş özellikleri ekle.
+
+AŞAMA 10:
+Test et, hataları düzelt ve yayınlama hazırlığını tamamla.
+
+Bu sıralama mevcut projeye göre değişebilir. Ancak güvenlik ve veri bütünlüğünü riske atma.
+
+Bir aşama tamamlandığında sonraki aşamaya geçmeden önce ilgili değişiklikleri doğrula.
+
+---
+
+# BÖLÜM 33 — GÖREVİNİ ŞİMDİ BAŞLAT
+
+Şimdi mevcut ORBIT projesini incele.
+
+Bana yalnızca bir geliştirme planı verip durma. Mevcut ortamın izin verdiği ölçüde doğrudan dosyaları düzenle, özellikleri uygula ve hataları düzelt.
+
+Öncelikle mevcut uygulamanın mimarisini belirle. Ardından en yüksek öncelikli eksikleri çözmeye başla.
+
+Kod değişikliklerini mevcut dosyalar üzerinde yap. Çalışan işlevleri koru.
+
+Bir servis, API anahtarı, veritabanı bağlantısı veya dış yapılandırma gerekiyorsa bunu açıkça belirt.
+
+Tamamlanmış, kısmen tamamlanmış ve henüz uygulanmamış özellikleri birbirinden ayır.
+
+Bütün görevleri tek seferde gerçekleştiremiyorsan, mevcut ilerlemeyi koru ve sıradaki işi net biçimde belirle.
+
+SON HEDEF:
+
+ORBIT'i yalnızca Discord'a benzeyen bir arayüz olmaktan çıkararak gerçek kullanıcıların kayıt olabildiği, iletişim kurabildiği, topluluklar oluşturabildiği, mesajlaşabildiği, dosya paylaşabildiği, güvenli şekilde kullanabildiği ve mobil cihazlarda rahatça erişebildiği profesyonel bir iletişim platformuna dönüştür.
+
+Tasarım kalitesinden, güvenlikten, veri bütünlüğünden ve gerçek işlevsellikten ödün verme.

@@ -1,11 +1,44 @@
-<div align="center">
+# ORBIT — İletişim ve Topluluk Platformu
 
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+ORBIT; gerçek zamanlı metin kanalları, özel mesajlar, sesli/görüntülü WebRTC odaları, forum kanalları, rol ve izin hiyerarşisi ile moderasyon araçları sunan full-stack iletişim platformudur.
 
-  <h1>Built with AI Studio</h2>
+## Mimari
 
-  <p>The fastest path from prompt to production with Gemini.</p>
+- **Frontend**: React 19, TypeScript, Vite, Tailwind CSS v4, React Router
+- **Backend**: Node.js, Express, WebSocket (`ws`), Zod, Multer
+- **Veritabanı**: SQLite (`better-sqlite3`, sürüm takipli SQL migration: `src/db/migrations/001_initial_schema.sql`)
+- **Ses ve Görüntü**: WebRTC + WebSocket sinyalleşme (`/ws`)
 
-  <a href="https://aistudio.google.com/apps">Start building</a>
+## Kurulum ve Çalıştırma
 
-</div>
+1. Bağımlılıkları yükleyin:
+   ```bash
+   npm install
+   ```
+
+2. Ortam değişkenlerini ayarlayın (`.env.example` dosyasını referans alın):
+   ```bash
+   cp .env.example .env
+   ```
+
+3. Geliştirme sunucusunu başlatın (port 3000):
+   ```bash
+   npm run dev
+   ```
+
+4. Otomatik testleri çalıştırın:
+   ```bash
+   npm test
+   ```
+
+5. Üretim derlemesi ve başlatma:
+   ```bash
+   npm run build
+   npm start
+   ```
+
+## Opsiyonel Dış Servisler
+
+- **TURN Sunucusu**: Kısıtlı NAT/kurumsal ağlarda WebRTC ses ve video bağlantısı için `TURN_URL`, `TURN_USERNAME`, `TURN_CREDENTIAL` değişkenlerini tanımlayın.
+- **GIF Arama**: GIF sekmesi için `TENOR_API_KEY` tanımlayın.
+- **Web Push**: Arka plan bildirimleri için `VAPID_PUBLIC_KEY` ve `VAPID_PRIVATE_KEY` tanımlayın.
