@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import { Router } from 'express';
 import type Database from 'better-sqlite3';
 import { z } from 'zod';
-import { createAuthMiddleware, getProfileByUserId, grantBadge, type AuthenticatedRequest } from '../auth.ts';
+import { createAuthMiddleware, getProfileByUserId, grantBadge, rateLimit, type AuthenticatedRequest } from '../auth.ts';
 import { hydrateChannelMessage, sendWelcomeMessageIfEnabled } from '../helpers.ts';
 import { SERVER_TEMPLATES, type ServerTemplateId } from '../../shared/templates.ts';
 import {

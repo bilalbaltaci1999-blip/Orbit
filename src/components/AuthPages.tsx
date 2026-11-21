@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { AlertCircle, Check, Crown, Eye, EyeOff, KeyRound, Loader2, Mail, ShieldCheck, X } from 'lucide-react';
-import { apiFetch, ApiError, setAuthToken } from '../client/api.ts';
+import { apiFetch, ApiError, setStoredToken } from '../client/api.ts';
 import { useAuth } from '../client/AuthContext.tsx';
 import { useToast } from '../client/ToastContext.tsx';
 import type { UserProfile, UserSettings } from '../shared/types.ts';
@@ -91,7 +91,7 @@ export function AuthScreen({ initialMode = 'login' }: { initialMode?: 'login' | 
 
       if (data.type === 'ORBIT_GOOGLE_AUTH_SUCCESS' && data.token) {
         try {
-          setAuthToken(data.token);
+          setStoredToken(data.token);
           const meRes = await apiFetch<{
             profile: UserProfile;
             settings: UserSettings;
@@ -101,7 +101,7 @@ export function AuthScreen({ initialMode = 'login' }: { initialMode?: 'login' | 
           showToast(`Google ile hoş geldiniz, ${meRes.profile.displayName}.`, 'success');
           navigate('/channels/@me');
         } catch (err) {
-          setAuthToken(null);
+          setStoredToken(null);
           setError(err instanceof ApiError ? err.message : 'Google oturumu doğrulanamadı.');
         } finally {
           setGoogleLoading(false);
