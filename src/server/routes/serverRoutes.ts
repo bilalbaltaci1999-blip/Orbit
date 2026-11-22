@@ -2,8 +2,9 @@ import crypto from 'node:crypto';
 import { Router } from 'express';
 import type Database from 'better-sqlite3';
 import { z } from 'zod';
-import { createAuthMiddleware, getProfileByUserId, grantBadge, rateLimit, type AuthenticatedRequest } from '../auth.ts';
+import { createAuthMiddleware, FOUNDER_EMAIL, getProfileByUserId, grantBadge, rateLimit, type AuthenticatedRequest } from '../auth.ts';
 import { hydrateChannelMessage, sendWelcomeMessageIfEnabled } from '../helpers.ts';
+import { SERVER_BADGE_CATALOG, type ServerBadgeMeta } from '../../shared/badges.ts';
 import { SERVER_TEMPLATES, type ServerTemplateId } from '../../shared/templates.ts';
 import {
   ALL_PERMISSIONS,
@@ -107,6 +108,27 @@ function buildServerSummary(db: Database.Database, serverId: string, userId: str
       .get(serverId)
   );
 
+  const ownerEmailRow = db.prepare(`SELECT email FROM users WHERE id = ?`).get(row.owner_id) as
+    | { email: string }
+    | undefined;
+  const serverBadges: ServerBadgeMeta[] = [];
+  if (ownerEmailRow?.email?.toLowerCase() === FOUNDER_EMAIL) {
+    serverBadges.push(SERVER_BADGE_CATALOG.founder_official);
+  }
+  if (boostLevel >= 3) {
+    serverBadges.push(SERVER_BADGE_CATALOG.boost_tier_3);
+  } else if (boostLevel === 2) {
+    serverBadges.push(SERVER_BADGE_CATALOG.boost_tier_2);
+  } else if (boostLevel === 1 || boostCount >= 1) {
+    serverBadges.push(SERVER_BADGE_CATALOG.boost_tier_1);
+  }
+  if (row.is_discoverable === 1) {
+    serverBadges.push(SERVER_BADGE_CATALOG.verified_community);
+  }
+  if (hasOfficialBot) {
+    serverBadges.push(SERVER_BADGE_CATALOG.orbit_bot_powered);
+  }
+
   return {
     id: row.id,
     name: row.name,
@@ -126,6 +148,7 @@ function buildServerSummary(db: Database.Database, serverId: string, userId: str
     boostLevel,
     myBoosted,
     hasOfficialBot,
+    serverBadges,
     createdAt: row.created_at,
   };
 }
@@ -209,14 +232,14 @@ export function createServerRoutes(db: Database.Database, hub: OrbitRealtimeHub)
 
       // Roles
       db.prepare(
-        `INSERT INTO roles (id, server_id, name, color, position, is_default, is_admin) VALUES (?, ?, ?, ?, ?, ?, ?)`
-      ).run(everyoneRoleId, serverId, '@herkes', '#94A3B8', 0, 1, 0);
+        `INSERT INTO roles (id, server_id, name, color, position, is_default, is_admin, hoist, mentionable, icon, description) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(everyoneRoleId, serverId, '@herkes', '#94A3B8', 0, 1, 0, 0, 0, '', 'Sunucudaki tüm üyeler için temel izinler.');
       db.prepare(
-        `INSERT INTO roles (id, server_id, name, color, position, is_default, is_admin) VALUES (?, ?, ?, ?, ?, ?, ?)`
-      ).run(modRoleId, serverId, 'Moderatör', '#3B82F6', 10, 0, 0);
+        `INSERT INTO roles (id, server_id, name, color, position, is_default, is_admin, hoist, mentionable, icon, description) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(modRoleId, serverId, 'Moderatör', '#3B82F6', 10, 0, 0, 1, 1, '🛡️', 'Topluluk düzenini ve kurallarını koruyan yetkili.');
       db.prepare(
-        `INSERT INTO roles (id, server_id, name, color, position, is_default, is_admin) VALUES (?, ?, ?, ?, ?, ?, ?)`
-      ).run(adminRoleId, serverId, 'Yönetici', '#8B5CF6', 20, 0, 1);
+        `INSERT INTO roles (id, server_id, name, color, position, is_default, is_admin, hoist, mentionable, icon, description) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(adminRoleId, serverId, 'Yönetici', '#8B5CF6', 20, 0, 1, 1, 0, '👑', 'Tüm kanallara ve sunucu yönetimine tam erişim.');
 
       const permStmt = db.prepare(`INSERT INTO role_permissions (role_id, permission) VALUES (?, ?)`);
       for (const p of DEFAULT_MEMBER_PERMISSIONS) permStmt.run(everyoneRoleId, p);
@@ -340,7 +363,7 @@ export function createServerRoutes(db: Database.Database, hub: OrbitRealtimeHub)
       });
 
     const roleRows = db
-      .prepare(`SELECT * FROM roles WHERE server_id = ? ORDER BY position DESC`)
+      .prepare(`SELECT * FROM roles WHERE server_id = ? ORDER BY position DESC, created_at ASC`)
       .all(serverId) as Array<{
       id: string;
       server_id: string;
@@ -349,12 +372,29 @@ export function createServerRoutes(db: Database.Database, hub: OrbitRealtimeHub)
       position: number;
       is_default: number;
       is_admin: number;
+      hoist?: number;
+      mentionable?: number;
+      icon?: string;
+      description?: string;
+      is_booster_role?: number;
     }>;
+
+    const totalMembersCount = (
+      db.prepare(`SELECT COUNT(*) as cnt FROM server_members WHERE server_id = ?`).get(serverId) as { cnt: number }
+    ).cnt;
 
     const roles = roleRows.map((r) => {
       const perms = db
         .prepare(`SELECT permission FROM role_permissions WHERE role_id = ?`)
         .all(r.id) as { permission: Permission }[];
+      const memberCount =
+        r.is_default === 1
+          ? totalMembersCount
+          : (
+              db
+                .prepare(`SELECT COUNT(*) as cnt FROM member_roles WHERE server_id = ? AND role_id = ?`)
+                .get(serverId, r.id) as { cnt: number }
+            ).cnt;
       return {
         id: r.id,
         serverId: r.server_id,
@@ -363,6 +403,12 @@ export function createServerRoutes(db: Database.Database, hub: OrbitRealtimeHub)
         position: r.position,
         isDefault: r.is_default === 1,
         isAdmin: r.is_admin === 1,
+        hoist: r.hoist === 1,
+        mentionable: r.mentionable === 1,
+        icon: r.icon || '',
+        description: r.description || '',
+        isBoosterRole: r.is_booster_role === 1,
+        memberCount,
         permissions: perms.map((p) => p.permission),
       };
     });
@@ -1023,19 +1069,30 @@ export function createServerRoutes(db: Database.Database, hub: OrbitRealtimeHub)
     const color = /^#[0-9a-fA-F]{6}$/.test(String(req.body?.color || '')) ? String(req.body.color) : '#6366F1';
     const requestedPos = Number(req.body?.position ?? 1);
     const position = isServerOwner(db, serverId, userId) ? requestedPos : Math.min(requestedPos, Math.max(1, myTopPos - 1));
+    const hoist = req.body?.hoist ? 1 : 0;
+    const mentionable = req.body?.mentionable ? 1 : 0;
+    const icon = typeof req.body?.icon === 'string' ? req.body.icon.trim().slice(0, 8) : '';
+    const description = typeof req.body?.description === 'string' ? req.body.description.trim().slice(0, 140) : '';
     const permissions = Array.isArray(req.body?.permissions)
       ? (req.body.permissions as Permission[]).filter((p) => ALL_PERMISSIONS.includes(p))
       : DEFAULT_MEMBER_PERMISSIONS;
 
     const roleId = crypto.randomUUID();
     const tx = db.transaction(() => {
-      db.prepare(`INSERT INTO roles (id, server_id, name, color, position, is_default, is_admin) VALUES (?, ?, ?, ?, ?, 0, ?)`).run(
+      db.prepare(
+        `INSERT INTO roles (id, server_id, name, color, position, is_default, is_admin, hoist, mentionable, icon, description)
+         VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)`
+      ).run(
         roleId,
         serverId,
         name,
         color,
         position,
-        req.body?.isAdmin && isServerOwner(db, serverId, userId) ? 1 : 0
+        req.body?.isAdmin && isServerOwner(db, serverId, userId) ? 1 : 0,
+        hoist,
+        mentionable,
+        icon,
+        description
       );
       const stmt = db.prepare(`INSERT INTO role_permissions (role_id, permission) VALUES (?, ?)`);
       for (const p of permissions) stmt.run(roleId, p);
@@ -1051,7 +1108,19 @@ export function createServerRoutes(db: Database.Database, hub: OrbitRealtimeHub)
     const roleId = String(req.params.roleId);
     const userId = req.userId!;
     const role = db.prepare(`SELECT * FROM roles WHERE id = ?`).get(roleId) as
-      | { id: string; server_id: string; name: string; color: string; position: number; is_default: number; is_admin: number }
+      | {
+          id: string;
+          server_id: string;
+          name: string;
+          color: string;
+          position: number;
+          is_default: number;
+          is_admin: number;
+          hoist?: number;
+          mentionable?: number;
+          icon?: string;
+          description?: string;
+        }
       | undefined;
     if (!role) {
       res.status(404).json({ error: 'Rol bulunamadı.' });
@@ -1068,11 +1137,29 @@ export function createServerRoutes(db: Database.Database, hub: OrbitRealtimeHub)
       return;
     }
 
-    const name = typeof req.body?.name === 'string' && req.body.name.trim() ? req.body.name.trim().slice(0, 32) : role.name;
+    const name =
+      role.is_default === 1
+        ? role.name
+        : typeof req.body?.name === 'string' && req.body.name.trim()
+        ? req.body.name.trim().slice(0, 32)
+        : role.name;
     const color = /^#[0-9a-fA-F]{6}$/.test(String(req.body?.color || '')) ? String(req.body.color) : role.color;
+    const hoist = role.is_default === 1 ? 0 : typeof req.body?.hoist === 'boolean' ? (req.body.hoist ? 1 : 0) : role.hoist ?? 0;
+    const mentionable =
+      typeof req.body?.mentionable === 'boolean' ? (req.body.mentionable ? 1 : 0) : role.mentionable ?? 0;
+    const icon = typeof req.body?.icon === 'string' ? req.body.icon.trim().slice(0, 8) : role.icon || '';
+    const description =
+      typeof req.body?.description === 'string' ? req.body.description.trim().slice(0, 140) : role.description || '';
+    let position = role.position;
+    if (role.is_default !== 1 && typeof req.body?.position === 'number' && Number.isFinite(req.body.position)) {
+      const requestedPos = Math.max(1, Math.min(999, Math.round(req.body.position)));
+      position = isServerOwner(db, role.server_id, userId) ? requestedPos : Math.min(requestedPos, Math.max(1, myTopPos - 1));
+    }
 
     const tx = db.transaction(() => {
-      db.prepare(`UPDATE roles SET name = ?, color = ? WHERE id = ?`).run(name, color, roleId);
+      db.prepare(
+        `UPDATE roles SET name = ?, color = ?, position = ?, hoist = ?, mentionable = ?, icon = ?, description = ? WHERE id = ?`
+      ).run(name, color, position, hoist, mentionable, icon, description, roleId);
       if (Array.isArray(req.body?.permissions)) {
         db.prepare(`DELETE FROM role_permissions WHERE role_id = ?`).run(roleId);
         const stmt = db.prepare(`INSERT INTO role_permissions (role_id, permission) VALUES (?, ?)`);
@@ -1086,6 +1173,126 @@ export function createServerRoutes(db: Database.Database, hub: OrbitRealtimeHub)
     addModerationLog(db, role.server_id, userId, 'ROL_GÜNCELLENDİ', null, name);
     hub.sendToRoom(`server:${role.server_id}`, { type: 'server:updated', payload: { serverId: role.server_id } });
     res.json({ ok: true });
+  });
+
+  router.get('/servers/:serverId/roles/:roleId/preview', requireAuth, (req: AuthenticatedRequest, res) => {
+    const serverId = String(req.params.serverId);
+    const roleId = String(req.params.roleId);
+    const userId = req.userId!;
+    if (!hasServerPermission(db, serverId, userId, 'MANAGE_ROLES')) {
+      res.status(403).json({ error: 'Rol önizlemesi için Rolleri Yönet yetkisi gereklidir.' });
+      return;
+    }
+
+    const role = db
+      .prepare(`SELECT id, name, is_admin, is_default FROM roles WHERE id = ? AND server_id = ?`)
+      .get(roleId, serverId) as { id: string; name: string; is_admin: number; is_default: number } | undefined;
+    if (!role) {
+      res.status(404).json({ error: 'Rol bulunamadı.' });
+      return;
+    }
+
+    const everyoneRole = db
+      .prepare(`SELECT id FROM roles WHERE server_id = ? AND is_default = 1 LIMIT 1`)
+      .get(serverId) as { id: string } | undefined;
+    const permIds = [role.id, ...(everyoneRole && everyoneRole.id !== role.id ? [everyoneRole.id] : [])];
+    const rolePerms = new Set<string>(
+      role.is_admin === 1
+        ? ALL_PERMISSIONS
+        : (
+            db
+              .prepare(
+                `SELECT DISTINCT permission FROM role_permissions WHERE role_id IN (${permIds.map(() => '?').join(',')})`
+              )
+              .all(...permIds) as { permission: string }[]
+          ).map((r) => r.permission)
+    );
+
+    const channels = db
+      .prepare(`SELECT id, name, type, is_private FROM channels WHERE server_id = ? AND type != 'category' ORDER BY position ASC`)
+      .all(serverId) as Array<{ id: string; name: string; type: string; is_private: number }>;
+
+    const preview = channels.map((ch) => {
+      if (role.is_admin === 1 || rolePerms.has('MANAGE_SERVER')) {
+        return { channelId: ch.id, name: ch.name, type: ch.type, isPrivate: ch.is_private === 1, canView: true, canSend: true, canConnect: true };
+      }
+      const override = db
+        .prepare(`SELECT allow_perms, deny_perms FROM channel_permission_overrides WHERE channel_id = ? AND role_id = ?`)
+        .get(ch.id, role.id) as { allow_perms: string; deny_perms: string } | undefined;
+      const allowSet = new Set((override?.allow_perms || '').split(',').filter(Boolean));
+      const denySet = new Set((override?.deny_perms || '').split(',').filter(Boolean));
+      const privateGrant = db
+        .prepare(`SELECT can_view, can_send FROM channel_role_access WHERE channel_id = ? AND role_id = ?`)
+        .get(ch.id, role.id) as { can_view: number; can_send: number } | undefined;
+
+      const baseView = denySet.has('VIEW_CHANNEL')
+        ? false
+        : allowSet.has('VIEW_CHANNEL') || rolePerms.has('VIEW_CHANNEL');
+      const canView = ch.is_private === 1 ? (rolePerms.has('MANAGE_CHANNELS') || privateGrant?.can_view === 1 || allowSet.has('VIEW_CHANNEL')) && !denySet.has('VIEW_CHANNEL') : baseView;
+      const canSend = canView && !denySet.has('SEND_MESSAGES') && (allowSet.has('SEND_MESSAGES') || rolePerms.has('SEND_MESSAGES')) && (ch.type !== 'announcement' || rolePerms.has('SEND_ANNOUNCEMENTS'));
+      const canConnect = canView && ch.type === 'voice' && !denySet.has('CONNECT_VOICE') && (allowSet.has('CONNECT_VOICE') || rolePerms.has('CONNECT_VOICE'));
+      return { channelId: ch.id, name: ch.name, type: ch.type, isPrivate: ch.is_private === 1, canView, canSend, canConnect };
+    });
+
+    res.json({ roleId: role.id, roleName: role.name, channels: preview });
+  });
+
+  router.get('/servers/:serverId/boosts', requireAuth, (req: AuthenticatedRequest, res) => {
+    const serverId = String(req.params.serverId);
+    const userId = req.userId!;
+    if (!isServerMember(db, serverId, userId)) {
+      res.status(403).json({ error: 'Bu sunucunun üyesi değilsiniz.' });
+      return;
+    }
+
+    const boostRows = db
+      .prepare(`SELECT user_id, created_at FROM server_boosts WHERE server_id = ? ORDER BY created_at DESC`)
+      .all(serverId) as Array<{ user_id: string; created_at: string }>;
+
+    const boostCount = boostRows.length;
+    const boostLevel = boostCount >= 10 ? 3 : boostCount >= 5 ? 2 : boostCount >= 2 ? 1 : 0;
+    const nextLevelTarget = boostLevel === 0 ? 2 : boostLevel === 1 ? 5 : boostLevel === 2 ? 10 : null;
+    const myBoosted = boostRows.some((b) => b.user_id === userId);
+
+    const boosters = boostRows
+      .map((b) => {
+        const profile = getProfileByUserId(db, b.user_id, hub.isUserOnline);
+        if (!profile) return null;
+        return { userId: b.user_id, boostedAt: b.created_at, profile };
+      })
+      .filter(Boolean);
+
+    res.json({
+      serverId,
+      boostCount,
+      boostLevel,
+      nextLevelTarget,
+      myBoosted,
+      boosters,
+      perks: [
+        {
+          level: 1,
+          requiredBoosts: 2,
+          title: 'Roket Seviye 1 · Özel Sunucu İkonu & Gelişmiş Ses',
+          description: '128 kbps kristal ses kalitesi, 🚀 Roket Takviyecisi rolü ve Seviye 1 sunucu rozeti.',
+          unlocked: boostLevel >= 1,
+        },
+        {
+          level: 2,
+          requiredBoosts: 5,
+          title: 'Roket Seviye 2 · HD Yayın & 50 Özel Emoji Slotu',
+          description: 'Ses kanallarında yüksek akıcılıkta 1080p yayın ve genişletilmiş özel emoji kapasitesi.',
+          unlocked: boostLevel >= 2,
+        },
+        {
+          level: 3,
+          requiredBoosts: 10,
+          title: 'Roket Seviye 3 · Maksimum Yörünge & Efsanevi Rozet',
+          description: 'En yüksek sunucu prestiji, öncelikli sahne akışı ve Efsanevi Takviye Seviye 3 rozeti.',
+          unlocked: boostLevel >= 3,
+        },
+      ],
+    });
   });
 
   router.delete('/roles/:roleId', requireAuth, (req: AuthenticatedRequest, res) => {
@@ -1416,7 +1623,13 @@ export function createServerRoutes(db: Database.Database, hub: OrbitRealtimeHub)
     if (serverId) {
       addModerationLog(db, serverId, req.userId!, 'ŞİKÂYET_OLUŞTURULDU', null, `${targetType}: ${reason.slice(0, 80)}`);
     }
-    grantBadge(db, req.userId!, 'bug_hunter');
+    grantBadge(db, req.userId!, 'bug_hunter_silver');
+    const reportCount = (
+      db.prepare(`SELECT COUNT(*) as cnt FROM user_reports WHERE reporter_id = ?`).get(req.userId!) as { cnt: number }
+    ).cnt;
+    if (reportCount >= 5) {
+      grantBadge(db, req.userId!, 'bug_hunter_gold');
+    }
     hub.broadcastPresence(req.userId!);
 
     res.status(201).json({ id });

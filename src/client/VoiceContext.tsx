@@ -81,6 +81,7 @@ interface VoiceContextValue {
   mediaError: string | null;
   remoteStreams: PeerStreamInfo[];
   localStream: MediaStream | null;
+  localScreenStream: MediaStream | null;
   audioInputs: MediaDeviceInfo[];
   audioOutputs: MediaDeviceInfo[];
   selectedAudioDevice: string;
@@ -147,6 +148,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
   const [mediaError, setMediaError] = useState<string | null>(null);
   const [remoteStreams, setRemoteStreams] = useState<PeerStreamInfo[]>([]);
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+  const [localScreenStream, setLocalScreenStream] = useState<MediaStream | null>(null);
   const [audioInputs, setAudioInputs] = useState<MediaDeviceInfo[]>([]);
   const [audioOutputs, setAudioOutputs] = useState<MediaDeviceInfo[]>([]);
   const [selectedAudioDevice, setSelectedAudioDevice] = useState('');
@@ -398,6 +400,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
     }
     serverMutedRef.current = false;
     setLocalStream(null);
+    setLocalScreenStream(null);
     setRemoteStreams([]);
     setScreenSharing(false);
     setVideoEnabled(false);
@@ -648,13 +651,22 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
       if (screenSharing) {
         await rtcRef.current?.stopScreenShare();
         setScreenSharing(false);
+        setLocalScreenStream(null);
       } else {
         const stream = await rtcRef.current?.startScreenShare();
         setScreenSharing(true);
+        setLocalScreenStream(stream || null);
         if (stream) {
           stream.getVideoTracks()[0]?.addEventListener('ended', () => {
             setScreenSharing(false);
+            setLocalScreenStream(null);
             void rtcRef.current?.stopScreenShare();
+            if (activeRoomRef.current?.mode === 'channel') {
+              void apiFetch(`/channels/${activeRoomRef.current.roomId}/voice/state`, {
+                method: 'PATCH',
+                body: JSON.stringify({ screenSharing: false }),
+              }).catch(() => {});
+            }
           });
         }
       }
@@ -786,6 +798,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
       mediaError,
       remoteStreams,
       localStream,
+      localScreenStream,
       audioInputs,
       audioOutputs,
       selectedAudioDevice,
@@ -834,6 +847,7 @@ export function VoiceProvider({ children }: { children: React.ReactNode }) {
       mediaError,
       remoteStreams,
       localStream,
+      localScreenStream,
       audioInputs,
       audioOutputs,
       selectedAudioDevice,

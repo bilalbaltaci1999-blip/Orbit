@@ -1,7 +1,8 @@
 import React from 'react';
-import { BrowserRouter, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
+import { BrowserRouter, Navigate, Route, Routes, useNavigate, useSearchParams } from 'react-router-dom';
 import { AuthProvider, useAuth } from './client/AuthContext.tsx';
 import { ErrorBoundary } from './client/ErrorBoundary.tsx';
+import { FirebaseProvider } from './client/FirebaseContext.tsx';
 import { ToastProvider } from './client/ToastContext.tsx';
 import { VoiceProvider } from './client/VoiceContext.tsx';
 import { AuthScreen } from './components/AuthPages.tsx';
@@ -35,6 +36,19 @@ function PublicOnlyRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function ResetPasswordRoute() {
+  const [searchParams] = useSearchParams();
+  const hasToken = Boolean(searchParams.get('token') || searchParams.get('resetToken'));
+  if (hasToken) {
+    return <AuthScreen initialMode="reset" />;
+  }
+  return (
+    <PublicOnlyRoute>
+      <AuthScreen initialMode="reset" />
+    </PublicOnlyRoute>
+  );
+}
+
 function InviteRouteWrapper() {
   const navigate = useNavigate();
   return <InviteAcceptView onJoined={(serverId) => navigate(`/channels/${serverId}`)} />;
@@ -45,8 +59,9 @@ export default function App() {
     <ErrorBoundary>
       <ToastProvider>
         <AuthProvider>
-          <VoiceProvider>
-            <BrowserRouter>
+          <FirebaseProvider>
+            <VoiceProvider>
+              <BrowserRouter>
             <Routes>
               <Route
                 path="/login"
@@ -64,14 +79,7 @@ export default function App() {
                   </PublicOnlyRoute>
                 }
               />
-              <Route
-                path="/reset-password"
-                element={
-                  <PublicOnlyRoute>
-                    <AuthScreen initialMode="reset" />
-                  </PublicOnlyRoute>
-                }
-              />
+              <Route path="/reset-password" element={<ResetPasswordRoute />} />
               <Route
                 path="/invite/:code"
                 element={
@@ -123,7 +131,8 @@ export default function App() {
               <Route path="*" element={<Navigate to="/channels/@me" replace />} />
             </Routes>
             </BrowserRouter>
-          </VoiceProvider>
+            </VoiceProvider>
+          </FirebaseProvider>
         </AuthProvider>
       </ToastProvider>
     </ErrorBoundary>

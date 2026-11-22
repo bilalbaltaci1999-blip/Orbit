@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -483,11 +484,11 @@ test('ORBIT full-stack auth, RBAC, private channel isolation, invite, DM, and re
     assert.equal(whExec.status, 201);
     assert.equal((whExec.data.message as { webhookName?: string }).webhookName, 'ORBIT Duyuru Botu');
 
-    // Verify Alice received bug_hunter + bot_developer auto badges
+    // Verify Alice received bug_hunter_silver + bot_developer auto badges
     const aliceMe = await api(srv.baseUrl, '/auth/me', {}, aliceToken);
     assert.equal(aliceMe.status, 200);
     const aliceBadges = (aliceMe.data.profile as { badges: Array<{ key: string }> }).badges.map((b) => b.key);
-    assert.ok(aliceBadges.includes('bug_hunter'));
+    assert.ok(aliceBadges.includes('bug_hunter_silver'));
     assert.ok(aliceBadges.includes('bot_developer'));
 
     // 13. Security & Performance Checks: SSRF guard, Sessions, Password Change, Reply isolation, 6-option poll, WS voice:signal auth
@@ -949,6 +950,7 @@ test('ORBIT Ultimate: 2FA, email change, export, achievements/streaks, Nitro/boo
     });
     assert.equal(u1.status, 201);
     const ownerToken = String(u1.data.token);
+    const ownerId = (u1.data.profile as { userId: string }).userId;
 
     const u2 = await api(srv.baseUrl, '/auth/register', {
       method: 'POST',
@@ -1119,7 +1121,7 @@ test('ORBIT Ultimate: 2FA, email change, export, achievements/streaks, Nitro/boo
     assert.ok(streakBefore.currentStreak >= 1);
     assert.ok(xpBefore > 0);
 
-    // 6. Nitro gating, activation, profile effects, and server boost/cancel
+    // 6. Paid Nitro gating, Stripe webhook activation, profile effects, server boost/cancel, and badges
     const deniedFrame = await api(
       srv.baseUrl,
       '/users/me/profile',
@@ -1134,22 +1136,89 @@ test('ORBIT Ultimate: 2FA, email change, export, achievements/streaks, Nitro/boo
       { method: 'POST', body: JSON.stringify({ plan: 'yearly' }) },
       ownerToken
     );
-    assert.equal(nitroActivate.status, 200);
-    assert.equal((nitroActivate.data.profile as { nitroTier: string }).nitroTier, 'nitro');
+    assert.equal(nitroActivate.status, 402);
+    assert.equal(nitroActivate.data.requiresPayment, true);
+
+    const prevStripeKey = process.env.STRIPE_SECRET_KEY;
+    const prevWebhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+    delete process.env.STRIPE_SECRET_KEY;
+    const checkoutUnconfigured = await api(
+      srv.baseUrl,
+      '/nitro/checkout',
+      { method: 'POST', body: JSON.stringify({ plan: 'monthly' }) },
+      ownerToken
+    );
+    assert.equal(checkoutUnconfigured.status, 503);
+
+    // Activate Nitro via signed Stripe webhook
+    process.env.STRIPE_WEBHOOK_SECRET = 'whsec_test_orbit_secret';
+    try {
+      const eventPayload = JSON.stringify({
+        type: 'checkout.session.completed',
+        data: {
+          object: {
+            id: 'cs_test_orbit_123',
+            client_reference_id: ownerId,
+            customer: 'cus_test_orbit',
+            subscription: 'sub_test_orbit',
+            amount_total: 99990,
+            currency: 'try',
+            metadata: { userId: ownerId, plan: 'yearly' },
+          },
+        },
+      });
+      const ts = Math.floor(Date.now() / 1000);
+      const sig = crypto
+        .createHmac('sha256', process.env.STRIPE_WEBHOOK_SECRET)
+        .update(`${ts}.${eventPayload}`)
+        .digest('hex');
+      const webhookResp = await fetch(`${srv.baseUrl}/stripe/webhook`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'stripe-signature': `t=${ts},v1=${sig}`,
+        },
+        body: eventPayload,
+      });
+      assert.equal(webhookResp.status, 200);
+    } finally {
+      if (prevWebhookSecret !== undefined) process.env.STRIPE_WEBHOOK_SECRET = prevWebhookSecret;
+      else delete process.env.STRIPE_WEBHOOK_SECRET;
+      if (prevStripeKey !== undefined) process.env.STRIPE_SECRET_KEY = prevStripeKey;
+    }
+
+    const meWithNitro = await api(srv.baseUrl, '/auth/me', {}, ownerToken);
+    assert.equal(meWithNitro.status, 200);
+    const nitroProfile = meWithNitro.data.profile as { nitroTier: string; badges: Array<{ key: string }> };
+    assert.equal(nitroProfile.nitroTier, 'nitro');
+    assert.ok(nitroProfile.badges.some((b) => b.key === 'orbit_nitro'));
 
     const allowedFrame = await api(
       srv.baseUrl,
       '/users/me/profile',
-      { method: 'PATCH', body: JSON.stringify({ avatarFrame: 'aurora', profileEffect: 'embers' }) },
+      { method: 'PATCH', body: JSON.stringify({ avatarFrame: 'aurora', profileEffect: 'embers', bannerPreset: 'supernova' }) },
       ownerToken
     );
     assert.equal(allowedFrame.status, 200);
-    assert.equal((allowedFrame.data.profile as { avatarFrame: string; profileEffect: string }).avatarFrame, 'aurora');
-    assert.equal((allowedFrame.data.profile as { profileEffect: string }).profileEffect, 'embers');
+    const updatedProfile = allowedFrame.data.profile as {
+      avatarFrame: string;
+      profileEffect: string;
+      bannerPreset: string;
+    };
+    assert.equal(updatedProfile.avatarFrame, 'aurora');
+    assert.equal(updatedProfile.profileEffect, 'embers');
+    assert.equal(updatedProfile.bannerPreset, 'supernova');
 
     const boostRes = await api(srv.baseUrl, `/nitro/boost/${serverId}`, { method: 'POST' }, ownerToken);
     assert.equal(boostRes.status, 200);
     assert.equal(boostRes.data.boostCount, 1);
+
+    // Server boost grants server_booster user badge and boost_tier_1 server badge
+    const meAfterBoost = await api(srv.baseUrl, '/auth/me', {}, ownerToken);
+    assert.ok((meAfterBoost.data.profile as { badges: Array<{ key: string }> }).badges.some((b) => b.key === 'server_booster'));
+    const srvAfterBoost = await api(srv.baseUrl, `/servers/${serverId}`, {}, ownerToken);
+    const srvBadges = (srvAfterBoost.data.server as { serverBadges?: Array<{ key: string }> }).serverBadges || [];
+    assert.ok(srvBadges.some((b) => b.key === 'boost_tier_1'));
 
     // Boost awards +40 XP & server_booster achievement
     const achAfterBoost = await api(srv.baseUrl, '/achievements/me', {}, ownerToken);
@@ -1158,7 +1227,9 @@ test('ORBIT Ultimate: 2FA, email change, export, achievements/streaks, Nitro/boo
 
     const cancelRes = await api(srv.baseUrl, '/nitro/cancel', { method: 'POST' }, ownerToken);
     assert.equal(cancelRes.status, 200);
-    assert.equal((cancelRes.data.profile as { nitroTier: string }).nitroTier, 'none');
+    const cancelledProfile = cancelRes.data.profile as { nitroTier: string; badges: Array<{ key: string }> };
+    assert.equal(cancelledProfile.nitroTier, 'none');
+    assert.ok(!cancelledProfile.badges.some((b) => b.key === 'orbit_nitro'));
 
     // 7. Official Verified ORBIT Bot installation and slash commands (/yardim, /sunucu)
     const botInstall = await api(
@@ -1209,8 +1280,330 @@ test('ORBIT Ultimate: 2FA, email change, export, achievements/streaks, Nitro/boo
     const participants = voiceJoin.data.participants as Array<{ userId: string }>;
     assert.ok(Array.isArray(participants));
     assert.ok(participants.some((p) => p.userId));
+
+    // 9. Case-insensitive password reset, reset link validation & Bug Hunter Silver/Gold badges on report submissions
+    const forgotRes = await api(srv.baseUrl, '/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email: 'OWNER_NEW@EXAMPLE.COM' }),
+    });
+    assert.equal(forgotRes.status, 200);
+    const resetCode = String(forgotRes.data.resetToken || '');
+    assert.ok(resetCode.length >= 6);
+    assert.ok(String(forgotRes.data.resetLink || '').includes('/reset-password?token='));
+
+    const validateBefore = await api(
+      srv.baseUrl,
+      `/auth/reset-password/validate?token=${encodeURIComponent(resetCode)}`
+    );
+    assert.equal(validateBefore.status, 200);
+    assert.equal(validateBefore.data.valid, true);
+
+    const resetConfirm = await api(srv.baseUrl, '/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ token: resetCode, newPassword: 'NewPassword123!' }),
+    });
+    assert.equal(resetConfirm.status, 200);
+
+    const validateAfter = await api(
+      srv.baseUrl,
+      `/auth/reset-password/validate?token=${encodeURIComponent(resetCode)}`
+    );
+    assert.equal(validateAfter.status, 400);
+    assert.equal(validateAfter.data.valid, false);
+
+    const loginReset = await api(srv.baseUrl, '/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email: 'owner_new@example.com', password: 'NewPassword123!' }),
+    });
+    assert.equal(loginReset.status, 200);
+    const newOwnerToken = String(loginReset.data.token);
+
+    const reportTargets = [
+      { targetType: 'user', targetId: 'bot-orbit-official' },
+      { targetType: 'server', targetId: serverId },
+      { targetType: 'message', targetId: String((attachMsg.data.message as { id: string }).id) },
+      { targetType: 'message', targetId: String((helpCmd.data.message as { id: string }).id) },
+      { targetType: 'message', targetId: String((srvCmd.data.message as { id: string }).id) },
+    ];
+    for (let i = 0; i < reportTargets.length; i++) {
+      const repRes = await api(
+        srv.baseUrl,
+        '/reports',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            targetType: reportTargets[i].targetType,
+            targetId: reportTargets[i].targetId,
+            reason: `[Diğer] Test raporu #${i + 1}`,
+          }),
+        },
+        newOwnerToken
+      );
+      assert.equal(repRes.status, 201);
+    }
+
+    const meAfterReports = await api(srv.baseUrl, '/auth/me', {}, newOwnerToken);
+    const reportBadges = (meAfterReports.data.profile as { badges: Array<{ key: string }> }).badges;
+    assert.ok(reportBadges.some((b) => b.key === 'bug_hunter_silver'));
+    assert.ok(reportBadges.some((b) => b.key === 'bug_hunter_gold'));
   } finally {
     await srv.close();
   }
 });
+
+test('ORBIT per-message read receipts (DM & channel + WS), Firebase Google status, and Server Roles & Rockets', async () => {
+  const srv = await startTestServer();
+  try {
+    // Register owner & member
+    const u1 = await api(srv.baseUrl, '/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({
+        email: 'rocket_owner@example.com',
+        username: 'rocket_owner',
+        displayName: 'Rocket Owner',
+        password: 'Password123!',
+      }),
+    });
+    assert.equal(u1.status, 201);
+    const ownerToken = String(u1.data.token);
+    const ownerId = String((u1.data.profile as { userId: string }).userId);
+
+    const u2 = await api(srv.baseUrl, '/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({
+        email: 'rocket_member@example.com',
+        username: 'rocket_member',
+        displayName: 'Rocket Member',
+        password: 'Password123!',
+      }),
+    });
+    assert.equal(u2.status, 201);
+    const memberToken = String(u2.data.token);
+    const memberId = String((u2.data.profile as { userId: string }).userId);
+
+    // 1. Firebase Google Sign-In status & token guard
+    const googleStatus = await api(srv.baseUrl, '/auth/google/status');
+    assert.equal(googleStatus.status, 200);
+    assert.equal(googleStatus.data.configured, true);
+    assert.equal(googleStatus.data.firebaseEnabled, true);
+
+    const badFb = await api(srv.baseUrl, '/auth/firebase-google', {
+      method: 'POST',
+      body: JSON.stringify({ idToken: '' }),
+    });
+    assert.equal(badFb.status, 400);
+
+    // 2. Create server + invite member
+    const srvCreate = await api(
+      srv.baseUrl,
+      '/servers',
+      { method: 'POST', body: JSON.stringify({ name: 'Yörünge Roketleri', description: 'Test', isDiscoverable: true }) },
+      ownerToken
+    );
+    assert.equal(srvCreate.status, 201);
+    const serverId = String((srvCreate.data.server as { id: string }).id);
+    const channelId = String(srvCreate.data.defaultChannelId);
+
+    const inv = await api(srv.baseUrl, `/servers/${serverId}/invites`, { method: 'POST', body: JSON.stringify({}) }, ownerToken);
+    assert.equal(inv.status, 201);
+    const invCode = String((inv.data.invite as { code: string }).code);
+    const joinRes = await api(srv.baseUrl, `/invites/${invCode}/join`, { method: 'POST', body: JSON.stringify({}) }, memberToken);
+    assert.equal(joinRes.status, 200);
+
+    // 3. Create Discord-style hoisted, mentionable role with icon & description, assign to member, and test channel preview + @Role mention
+    const createRoleRes = await api(
+      srv.baseUrl,
+      `/servers/${serverId}/roles`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          name: 'Galaksi Pilotu',
+          color: '#38BDF8',
+          position: 5,
+          hoist: true,
+          mentionable: true,
+          icon: '⚡',
+          description: 'Özel seçkin pilot rolü',
+        }),
+      },
+      ownerToken
+    );
+    assert.equal(createRoleRes.status, 201);
+    const pilotRoleId = String(createRoleRes.data.roleId);
+
+    const assignRes = await api(
+      srv.baseUrl,
+      `/servers/${serverId}/members/${memberId}/roles`,
+      { method: 'PUT', body: JSON.stringify({ roleIds: [pilotRoleId] }) },
+      ownerToken
+    );
+    assert.equal(assignRes.status, 200);
+
+    const srvDetail = await api(srv.baseUrl, `/servers/${serverId}`, {}, ownerToken);
+    assert.equal(srvDetail.status, 200);
+    const pilotRole = (srvDetail.data.roles as Array<{ id: string; hoist?: boolean; mentionable?: boolean; icon?: string; memberCount?: number }>).find(
+      (r) => r.id === pilotRoleId
+    );
+    assert.ok(pilotRole);
+    assert.equal(pilotRole.hoist, true);
+    assert.equal(pilotRole.mentionable, true);
+    assert.equal(pilotRole.icon, '⚡');
+    assert.equal(pilotRole.memberCount, 1);
+
+    const previewRes = await api(srv.baseUrl, `/servers/${serverId}/roles/${pilotRoleId}/preview`, {}, ownerToken);
+    assert.equal(previewRes.status, 200);
+    const previewChannels = previewRes.data.channels as Array<{ channelId: string; canView: boolean; canSend: boolean }>;
+    assert.ok(previewChannels.some((c) => c.channelId === channelId && c.canView && c.canSend));
+
+    // Owner sends @Galaksi Pilotu mention message -> member gets mention notification
+    const roleMentionMsg = await api(
+      srv.baseUrl,
+      `/channels/${channelId}/messages`,
+      { method: 'POST', body: JSON.stringify({ content: 'Selam @Galaksi Pilotu ekibi!' }) },
+      ownerToken
+    );
+    assert.equal(roleMentionMsg.status, 201);
+
+    const memberNotifs = await api(srv.baseUrl, '/notifications', {}, memberToken);
+    assert.equal(memberNotifs.status, 200);
+    assert.ok(
+      (memberNotifs.data.notifications as Array<{ title: string }>).some((n) => n.title.includes('@Galaksi Pilotu'))
+    );
+
+    // 4. Granular Per-Message Channel Read Receipts + WebSocket notification
+    const chMsg1 = await api(
+      srv.baseUrl,
+      `/channels/${channelId}/messages`,
+      { method: 'POST', body: JSON.stringify({ content: 'Mesaj 1 - görülecek' }) },
+      ownerToken
+    );
+    const chMsg2 = await api(
+      srv.baseUrl,
+      `/channels/${channelId}/messages`,
+      { method: 'POST', body: JSON.stringify({ content: 'Mesaj 2 - henüz görülmedi' }) },
+      ownerToken
+    );
+    const chMsg1Id = String((chMsg1.data.message as { id: string }).id);
+    const chMsg2Id = String((chMsg2.data.message as { id: string }).id);
+
+    const wsOwner = new WebSocket(`${srv.wsUrl}?token=${encodeURIComponent(ownerToken)}`);
+    await new Promise<void>((resolve, reject) => {
+      wsOwner.once('open', () => {
+        wsOwner.send(JSON.stringify({ type: 'room:subscribe', payload: { room: `channel:${channelId}` } }));
+        setTimeout(resolve, 60);
+      });
+      wsOwner.once('error', reject);
+    });
+
+    const receiptEventPromise = new Promise<{ type: string; payload: { messageIds?: string[]; reader?: { userId: string } } }>(
+      (resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('WS message:read_receipt timeout')), 4000);
+        wsOwner.on('message', (raw) => {
+          const parsed = JSON.parse(raw.toString()) as { type: string; payload: { messageIds?: string[]; reader?: { userId: string } } };
+          if (parsed.type === 'message:read_receipt') {
+            clearTimeout(timer);
+            resolve(parsed);
+          }
+        });
+      }
+    );
+
+    // Member views ONLY chMsg1 (not chMsg2)
+    const chMarkRes = await api(
+      srv.baseUrl,
+      `/channels/${channelId}/messages/read`,
+      { method: 'POST', body: JSON.stringify({ messageIds: [chMsg1Id] }) },
+      memberToken
+    );
+    assert.equal(chMarkRes.status, 200);
+    assert.deepEqual(chMarkRes.data.markedIds, [chMsg1Id]);
+
+    const wsReceipt = await receiptEventPromise;
+    assert.equal(wsReceipt.payload.reader?.userId, memberId);
+    assert.ok(wsReceipt.payload.messageIds?.includes(chMsg1Id));
+    await new Promise<void>((res) => {
+      wsOwner.once('close', () => res());
+      wsOwner.close();
+    });
+
+    // Verify DB-persisted read receipts on GET messages: chMsg1 has readBy=[memberId], chMsg2 has readBy=[]
+    const chMsgsAfter = await api(srv.baseUrl, `/channels/${channelId}/messages`, {}, ownerToken);
+    assert.equal(chMsgsAfter.status, 200);
+    const list = chMsgsAfter.data.messages as Array<{ id: string; readCount?: number; readBy?: Array<{ userId: string }> }>;
+    const fetched1 = list.find((m) => m.id === chMsg1Id);
+    const fetched2 = list.find((m) => m.id === chMsg2Id);
+    assert.equal(fetched1?.readCount, 1);
+    assert.equal(fetched1?.readBy?.[0]?.userId, memberId);
+    assert.equal(fetched2?.readCount, 0);
+
+    // 5. Granular Per-Message DM Read Receipts
+    const dmConvRes = await api(
+      srv.baseUrl,
+      '/dm/conversations',
+      { method: 'POST', body: JSON.stringify({ participantIds: [memberId] }) },
+      ownerToken
+    );
+    assert.equal(dmConvRes.status, 201);
+    const convId = String((dmConvRes.data.conversation as { id: string }).id);
+
+    const dmMsgA = await api(
+      srv.baseUrl,
+      `/dm/conversations/${convId}/messages`,
+      { method: 'POST', body: JSON.stringify({ content: 'DM A okundu' }) },
+      ownerToken
+    );
+    const dmMsgB = await api(
+      srv.baseUrl,
+      `/dm/conversations/${convId}/messages`,
+      { method: 'POST', body: JSON.stringify({ content: 'DM B okunmadı' }) },
+      ownerToken
+    );
+    const dmAId = String((dmMsgA.data.message as { id: string }).id);
+    const dmBId = String((dmMsgB.data.message as { id: string }).id);
+
+    const dmMarkRes = await api(
+      srv.baseUrl,
+      `/dm/conversations/${convId}/messages/read`,
+      { method: 'POST', body: JSON.stringify({ messageIds: [dmAId] }) },
+      memberToken
+    );
+    assert.equal(dmMarkRes.status, 200);
+    assert.deepEqual(dmMarkRes.data.markedIds, [dmAId]);
+
+    const dmListRes = await api(srv.baseUrl, `/dm/conversations/${convId}/messages`, {}, ownerToken);
+    assert.equal(dmListRes.status, 200);
+    const dmMsgs = dmListRes.data.messages as Array<{ id: string; readCount?: number; readBy?: Array<{ userId: string }> }>;
+    assert.equal(dmMsgs.find((m) => m.id === dmAId)?.readCount, 1);
+    assert.equal(dmMsgs.find((m) => m.id === dmAId)?.readBy?.[0]?.userId, memberId);
+    assert.equal(dmMsgs.find((m) => m.id === dmBId)?.readCount, 0);
+
+    // 6. Server Boost Rockets & Auto-assigned Hoisted Booster Role
+    // Activate Nitro demo for owner
+    const nitroAct = await api(srv.baseUrl, '/nitro/activate-demo', { method: 'POST', body: JSON.stringify({ plan: 'monthly' }) }, ownerToken);
+    assert.equal(nitroAct.status, 200);
+
+    const boostPost = await api(srv.baseUrl, `/nitro/boost/${serverId}`, { method: 'POST', body: JSON.stringify({}) }, ownerToken);
+    assert.equal(boostPost.status, 200);
+
+    const boostsGet = await api(srv.baseUrl, `/servers/${serverId}/boosts`, {}, memberToken);
+    assert.equal(boostsGet.status, 200);
+    assert.equal(boostsGet.data.boostCount, 1);
+    assert.equal(boostsGet.data.boostLevel, 0);
+    assert.equal(boostsGet.data.nextLevelTarget, 2);
+    assert.ok((boostsGet.data.boosters as Array<{ userId: string }>).some((b) => b.userId === ownerId));
+    assert.equal((boostsGet.data.perks as unknown[]).length, 3);
+
+    const srvAfterBoost = await api(srv.baseUrl, `/servers/${serverId}`, {}, ownerToken);
+    const boosterRole = (srvAfterBoost.data.roles as Array<{ id: string; isBoosterRole?: boolean; hoist?: boolean; name: string }>).find(
+      (r) => r.isBoosterRole
+    );
+    assert.ok(boosterRole);
+    assert.equal(boosterRole.hoist, true);
+    const ownerMember = (srvAfterBoost.data.members as Array<{ userId: string; roleIds: string[] }>).find((m) => m.userId === ownerId);
+    assert.ok(ownerMember?.roleIds.includes(boosterRole.id));
+  } finally {
+    await srv.close();
+  }
+});
+
 

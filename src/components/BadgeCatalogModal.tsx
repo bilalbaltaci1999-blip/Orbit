@@ -1,11 +1,19 @@
 import { useState } from 'react';
-import { Award, CheckCircle2, Crown, Plus, Sparkles, Trash2, X } from 'lucide-react';
+import { Award, Calendar, CheckCircle2, Crown, Plus, Sparkles, Trash2, X } from 'lucide-react';
 import { apiFetch, ApiError } from '../client/api.ts';
 import { useAuth } from '../client/AuthContext.tsx';
 import { useToast } from '../client/ToastContext.tsx';
-import { ALL_BADGE_KEYS, BADGE_CATALOG, ORBIT_MEMBER_CAP, type BadgeKey } from '../shared/badges.ts';
+import { BADGE_CATALOG, CURATED_BADGE_KEYS, ORBIT_MEMBER_CAP, type BadgeKey } from '../shared/badges.ts';
 import type { UserProfile } from '../shared/types.ts';
 import { BadgeGlyph, fetchBadgeStats, useBadgeStats } from './BadgeStrip.tsx';
+
+function formatEarnedDate(iso?: string): string | null {
+  if (!iso) return null;
+  const normalized = iso.endsWith('Z') || iso.includes('+') ? iso : `${iso.replace(' ', 'T')}Z`;
+  const d = new Date(normalized);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString('tr-TR', { day: 'numeric', month: 'short', year: 'numeric' });
+}
 
 export function BadgeCatalogModal({ onClose }: { onClose: () => void }) {
   const { profile, updateProfileState } = useAuth();
@@ -16,12 +24,14 @@ export function BadgeCatalogModal({ onClose }: { onClose: () => void }) {
   const [animTick, setAnimTick] = useState<number>(0);
   const [mutatingKey, setMutatingKey] = useState<BadgeKey | null>(null);
 
-  const ownedKeys = new Set((profile?.badges || []).map((b) => b.key));
+  const ownedMap = new Map((profile?.badges || []).map((b) => [b.key, b]));
   const orbitCount = stats?.orbitMemberCount ?? 0;
   const orbitRemaining = stats?.orbitMemberRemaining ?? ORBIT_MEMBER_CAP;
   const orbitPct = Math.min(100, Math.round((orbitCount / ORBIT_MEMBER_CAP) * 100));
 
   const selectedBadge = BADGE_CATALOG[selectedKey];
+  const selectedOwned = ownedMap.get(selectedKey);
+  const selectedEarnedAt = formatEarnedDate(selectedOwned?.grantedAt);
   const selectedStat = stats?.badges[selectedKey];
 
   const handleToggleSelfBadge = async (key: BadgeKey, grant: boolean) => {
@@ -60,9 +70,9 @@ export function BadgeCatalogModal({ onClose }: { onClose: () => void }) {
               <Award className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-base font-bold font-display">ORBIT Rozet Kataloğu ({ALL_BADGE_KEYS.length} Rozet)</h3>
+              <h3 className="text-base font-bold font-display">ORBIT Özel Rozet Kataloğu ({CURATED_BADGE_KEYS.length} Seçkin Rozet)</h3>
               <p className="text-xs text-slate-500 dark:text-[#A1A1B5]">
-                Rozetlere tıklayarak animasyonunu, basitliğini ve gerçek kullanıcı dağılımını inceleyin
+                Rozetlerin nadirliğini, kazanma koşullarını ve ne zaman alındığını inceleyin
               </p>
             </div>
           </div>
@@ -89,7 +99,7 @@ export function BadgeCatalogModal({ onClose }: { onClose: () => void }) {
                     <h4 className="text-sm font-bold font-display text-slate-900 dark:text-[#F8FAFC]">
                       İlk 100 Orbit Üyesi Kampanyası
                     </h4>
-                    {ownedKeys.has('orbit_member') && (
+                    {ownedMap.has('orbit_member') && (
                       <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#22C55E]">
                         <CheckCircle2 className="w-3.5 h-3.5" /> Sizde Mevcut
                       </span>
@@ -139,16 +149,28 @@ export function BadgeCatalogModal({ onClose }: { onClose: () => void }) {
                 <div>
                   <div className="flex items-center gap-2 flex-wrap">
                     <h4 className="text-base font-bold font-display">{selectedBadge.label}</h4>
-                    <span className="text-xs font-semibold" style={{ color: selectedBadge.color }}>
-                      · {selectedBadge.rarity}
+                    <span
+                      className="text-[11px] font-semibold px-2 py-0.5 rounded-md border"
+                      style={{
+                        color: selectedBadge.color,
+                        borderColor: `${selectedBadge.color}44`,
+                        backgroundColor: `${selectedBadge.color}18`,
+                      }}
+                    >
+                      Nadirlik: {selectedBadge.rarity}
                     </span>
-                    {ownedKeys.has(selectedKey) && (
+                    {selectedOwned && (
                       <span className="text-[11px] font-semibold text-[#22C55E] inline-flex items-center gap-1">
                         <Sparkles className="w-3 h-3" /> Açık
                       </span>
                     )}
                   </div>
                   <p className="text-xs text-slate-600 dark:text-[#A1A1B5] mt-0.5">{selectedBadge.description}</p>
+                  {selectedEarnedAt && (
+                    <p className="text-[11px] text-[#22C55E] font-medium mt-1 inline-flex items-center gap-1">
+                      <Calendar className="w-3 h-3" /> Alınma Tarihi: {selectedEarnedAt}
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -156,14 +178,14 @@ export function BadgeCatalogModal({ onClose }: { onClose: () => void }) {
                 <button
                   type="button"
                   disabled={mutatingKey === selectedKey}
-                  onClick={() => void handleToggleSelfBadge(selectedKey, !ownedKeys.has(selectedKey))}
+                  onClick={() => void handleToggleSelfBadge(selectedKey, !ownedMap.has(selectedKey))}
                   className={`h-8 px-3 rounded-xl text-xs font-semibold inline-flex items-center gap-1.5 border transition-colors ${
-                    ownedKeys.has(selectedKey)
+                    ownedMap.has(selectedKey)
                       ? 'border-[#EF4444]/40 text-[#EF4444] hover:bg-[#EF4444]/10'
                       : 'border-[#A855F7]/40 bg-[#7C3AED] text-white hover:bg-[#6D28D9]'
                   }`}
                 >
-                  {ownedKeys.has(selectedKey) ? (
+                  {ownedMap.has(selectedKey) ? (
                     <>
                       <Trash2 className="w-3.5 h-3.5" />
                       Benden Kaldır
@@ -180,7 +202,7 @@ export function BadgeCatalogModal({ onClose }: { onClose: () => void }) {
 
             <div className="relative grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2 border-t border-slate-200/80 dark:border-[#29293D] text-xs">
               <p className="text-slate-600 dark:text-[#A1A1B5]">
-                <strong className="text-slate-900 dark:text-[#F8FAFC]">Basitlik: </strong>
+                <strong className="text-slate-900 dark:text-[#F8FAFC]">Nasıl Alınır: </strong>
                 {selectedBadge.simplicity}
               </p>
               <p className="text-slate-500 dark:text-[#A1A1B5] sm:text-right tabular-nums">
@@ -192,12 +214,14 @@ export function BadgeCatalogModal({ onClose }: { onClose: () => void }) {
             </div>
           </div>
 
-          {/* All Interactive Badges Grid */}
+          {/* Curated Special Badges Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {ALL_BADGE_KEYS.map((key) => {
+            {CURATED_BADGE_KEYS.map((key) => {
               const badge = BADGE_CATALOG[key];
               const stat = stats?.badges[key];
-              const owned = ownedKeys.has(key);
+              const ownedItem = ownedMap.get(key);
+              const earnedStr = formatEarnedDate(ownedItem?.grantedAt);
+              const owned = Boolean(ownedItem);
               const isSelected = selectedKey === key;
 
               return (
@@ -248,8 +272,8 @@ export function BadgeCatalogModal({ onClose }: { onClose: () => void }) {
                           </span>
                         )}
                       </div>
-                      <p className="text-[11px] font-medium" style={{ color: badge.color }}>
-                        {badge.rarity}
+                      <p className="text-[11px] font-semibold" style={{ color: badge.color }}>
+                        Nadirlik: {badge.rarity}
                       </p>
                     </div>
                   </div>
@@ -258,19 +282,23 @@ export function BadgeCatalogModal({ onClose }: { onClose: () => void }) {
 
                   <div className="relative pt-2 border-t border-slate-200/80 dark:border-[#29293D] space-y-1 text-[11px]">
                     <p className="text-slate-600 dark:text-[#A1A1B5]">
-                      <span className="font-semibold text-slate-900 dark:text-[#F8FAFC]">Basitlik:</span> {badge.simplicity}
+                      <span className="font-semibold text-slate-900 dark:text-[#F8FAFC]">Koşul:</span> {badge.simplicity}
                     </p>
-                    <p className="text-slate-500 dark:text-[#A1A1B5] tabular-nums flex items-center justify-between">
+                    <div className="text-slate-500 dark:text-[#A1A1B5] tabular-nums flex items-center justify-between gap-2 flex-wrap">
                       <span>
                         <strong>{stat ? `${stat.count} kişide` : '—'}</strong>
                         {stat && stats ? ` · %${stat.percentage}` : ''}
                       </span>
-                      {profile?.isFounder && (
+                      {earnedStr ? (
+                        <span className="text-[#22C55E] font-medium inline-flex items-center gap-1">
+                          <Calendar className="w-3 h-3" /> {earnedStr}
+                        </span>
+                      ) : profile?.isFounder ? (
                         <span className="inline-flex items-center gap-1 text-[#F59E0B] text-[10px]">
                           <Crown className="w-3 h-3" /> Kurucu Kontrolü
                         </span>
-                      )}
-                    </p>
+                      ) : null}
+                    </div>
                   </div>
                 </button>
               );

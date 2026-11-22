@@ -1,8 +1,47 @@
 import crypto from 'node:crypto';
 import type Database from 'better-sqlite3';
-import type { ChatMessage, DirectConversation, NotificationItem, ReactionSummary, Attachment } from '../shared/types.ts';
+import type {
+  Attachment,
+  ChatMessage,
+  DirectConversation,
+  MessageReadReceipt,
+  NotificationItem,
+  ReactionSummary,
+} from '../shared/types.ts';
 import { getProfileByUserId, parseUtcMs, type OnlineChecker } from './auth.ts';
 import type { OrbitRealtimeHub } from './ws.ts';
+
+function getMessageReadReceipts(
+  db: Database.Database,
+  targetType: 'channel' | 'dm',
+  messageId: string,
+  authorId: string
+): { readBy: MessageReadReceipt[]; readCount: number } {
+  const rows = db
+    .prepare(
+      `SELECT mrr.user_id, mrr.read_at, p.display_name, p.avatar_url
+       FROM message_read_receipts mrr
+       JOIN profiles p ON p.user_id = mrr.user_id
+       WHERE mrr.target_type = ? AND mrr.message_id = ? AND mrr.user_id != ?
+       ORDER BY mrr.read_at DESC`
+    )
+    .all(targetType, messageId, authorId) as Array<{
+    user_id: string;
+    read_at: string;
+    display_name: string;
+    avatar_url: string | null;
+  }>;
+
+  return {
+    readBy: rows.slice(0, 15).map((r) => ({
+      userId: r.user_id,
+      displayName: r.display_name,
+      avatarUrl: r.avatar_url,
+      readAt: r.read_at,
+    })),
+    readCount: rows.length,
+  };
+}
 
 export function createNotification(
   db: Database.Database,
@@ -226,6 +265,10 @@ export function hydrateChannelMessage(
     }
   }
 
+  const receiptInfo = row.deleted_at
+    ? { readBy: [] as MessageReadReceipt[], readCount: 0 }
+    : getMessageReadReceipts(db, 'channel', row.id, row.author_id);
+
   return {
     id: row.id,
     channelId: row.channel_id,
@@ -247,6 +290,8 @@ export function hydrateChannelMessage(
     attachments: row.deleted_at ? [] : attachments,
     reactions,
     poll,
+    readBy: receiptInfo.readBy,
+    readCount: receiptInfo.readCount,
     status: 'sent',
   };
 }
@@ -352,6 +397,10 @@ export function hydrateDirectMessage(
     }
   }
 
+  const receiptInfo = row.deleted_at
+    ? { readBy: [] as MessageReadReceipt[], readCount: 0 }
+    : getMessageReadReceipts(db, 'dm', row.id, row.author_id);
+
   return {
     id: row.id,
     conversationId: row.conversation_id,
@@ -368,6 +417,8 @@ export function hydrateDirectMessage(
     createdAt: row.created_at,
     attachments: row.deleted_at ? [] : attachments,
     reactions,
+    readBy: receiptInfo.readBy,
+    readCount: receiptInfo.readCount,
     status: 'sent',
   };
 }

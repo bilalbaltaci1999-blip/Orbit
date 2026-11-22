@@ -3,6 +3,7 @@ import {
   ArrowLeft,
   Award,
   Bell,
+  BookOpen,
   CalendarClock,
   Check,
   ChevronRight,
@@ -11,7 +12,10 @@ import {
   Crown,
   Download,
   Eye,
+  FileText,
   Flame,
+  Image as ImageIcon,
+  Info,
   Key,
   KeyRound,
   Keyboard,
@@ -20,19 +24,24 @@ import {
   LogOut,
   Mail,
   Mic,
+  Monitor,
+  Moon,
   Palette,
   Plus,
+  Scale,
   Share,
   Shield,
   ShieldCheck,
   Smartphone,
   Sparkles,
+  Sun,
   Trash2,
   Upload,
   User,
   Volume2,
   X,
 } from 'lucide-react';
+import { motion } from 'motion/react';
 import { apiFetch, ApiError, getStoredToken } from '../client/api.ts';
 import { useAuth } from '../client/AuthContext.tsx';
 import { useToast } from '../client/ToastContext.tsx';
@@ -41,10 +50,12 @@ import { useVoice, type PttKeyOption } from '../client/VoiceContext.tsx';
 import {
   ACTIVITY_LABELS,
   AVATAR_FRAMES,
+  BANNER_PRESETS,
   PROFILE_EFFECTS,
   type ActivityTypeKey,
   type AvatarFrameKey,
   type BadgeKey,
+  type BannerPresetKey,
   type ProfileEffectKey,
 } from '../shared/badges.ts';
 import type {
@@ -57,8 +68,9 @@ import type {
 } from '../shared/types.ts';
 import { BadgeStrip, FeaturedBadgeIcon } from './BadgeStrip.tsx';
 import { NitroBadge } from './BotBadge.tsx';
+import { OrbitDocsSection, type OrbitDocTabId } from './OrbitDocsSection.tsx';
 import { SingleColorPickerButton } from './SingleColorPickerButton.tsx';
-import { UserAvatar } from './UserAvatar.tsx';
+import { ProfileBannerSurface, UserAvatar } from './UserAvatar.tsx';
 
 const STATUS_PILLS: Array<{ id: PresenceStatus; label: string; dot: string }> = [
   { id: 'online', label: 'Çevrimiçi', dot: 'bg-emerald-500' },
@@ -76,29 +88,39 @@ type SettingsTabId =
   | 'notifications'
   | 'accessibility'
   | 'scheduled'
-  | 'install';
+  | 'install'
+  | OrbitDocTabId;
 
 const SETTINGS_CATEGORIES: Array<{
   title: string;
-  items: Array<{ id: SettingsTabId; label: string; icon: React.ComponentType<{ className?: string }> }>;
+  items: Array<{ id: SettingsTabId; label: string; icon: React.ComponentType<{ className?: string }>; iconColor: string }>;
 }> = [
   {
     title: 'KULLANICI AYARLARI',
     items: [
-      { id: 'account', label: 'Hesabım & Profil', icon: User },
-      { id: 'security', label: 'Güvenlik & Oturum', icon: Lock },
-      { id: 'privacy', label: 'Gizlilik & Engeller', icon: Shield },
+      { id: 'account', label: 'Hesabım & Profil', icon: User, iconColor: 'text-[#A855F7]' },
+      { id: 'security', label: 'Güvenlik & Oturum', icon: Lock, iconColor: 'text-cyan-500' },
+      { id: 'privacy', label: 'Gizlilik & Engeller', icon: Shield, iconColor: 'text-emerald-500' },
     ],
   },
   {
     title: 'UYGULAMA AYARLARI',
     items: [
-      { id: 'appearance', label: 'Görünüm', icon: Palette },
-      { id: 'voice', label: 'Ses, Video & Bas-Konuş', icon: Mic },
-      { id: 'notifications', label: 'Bildirimler', icon: Bell },
-      { id: 'accessibility', label: 'Erişilebilirlik', icon: Eye },
-      { id: 'scheduled', label: 'Zamanlanmış & Hatırlatıcılar', icon: CalendarClock },
-      { id: 'install', label: 'Uygulamayı Kur (PWA)', icon: Download },
+      { id: 'appearance', label: 'Görünüm', icon: Palette, iconColor: 'text-fuchsia-500' },
+      { id: 'voice', label: 'Ses, Video & Bas-Konuş', icon: Mic, iconColor: 'text-emerald-500' },
+      { id: 'notifications', label: 'Bildirimler', icon: Bell, iconColor: 'text-amber-500' },
+      { id: 'accessibility', label: 'Erişilebilirlik', icon: Eye, iconColor: 'text-sky-500' },
+      { id: 'scheduled', label: 'Zamanlanmış & Hatırlatıcılar', icon: CalendarClock, iconColor: 'text-violet-500' },
+      { id: 'install', label: 'Uygulamayı Kur (PWA)', icon: Download, iconColor: 'text-cyan-500' },
+    ],
+  },
+  {
+    title: 'BİLGİ, REHBER & POLİTİKALAR',
+    items: [
+      { id: 'about', label: 'ORBIT Tanıtım & Hakkında', icon: Info, iconColor: 'text-[#A855F7]' },
+      { id: 'guide', label: 'Kullanım Kılavuzu', icon: BookOpen, iconColor: 'text-emerald-500' },
+      { id: 'terms', label: 'Hizmet Şartları & Kurallar', icon: Scale, iconColor: 'text-amber-500' },
+      { id: 'policies', label: 'Gizlilik & Çerez Politikası', icon: FileText, iconColor: 'text-cyan-500' },
     ],
   },
 ];
@@ -153,15 +175,19 @@ export function SettingsModal({
   const pwa = usePWAInstall();
 
   const [tab, setTab] = useState<SettingsTabId>('account');
+  const [accountSubTab, setAccountSubTab] = useState<'basic' | 'appearance' | 'status' | 'danger'>('basic');
   // Mobile Discord-like vertical category list -> detail drilldown
   const [mobileMenuOpen, setMobileMenuOpen] = useState(true);
 
   const avatarInputRef = useRef<HTMLInputElement>(null);
+  const bannerInputRef = useRef<HTMLInputElement>(null);
 
   const [displayName, setDisplayName] = useState(profile?.displayName || '');
   const [username, setUsername] = useState(profile?.username || '');
   const [bio, setBio] = useState(profile?.bio || '');
   const [bannerColor, setBannerColor] = useState(profile?.bannerColor || '#7C3AED');
+  const [bannerPreset, setBannerPreset] = useState<BannerPresetKey>(profile?.bannerPreset || 'none');
+  const [bannerUploading, setBannerUploading] = useState(false);
   const [preferredStatus, setPreferredStatus] = useState<PresenceStatus>(profile?.preferredStatus || 'online');
   const [customStatus, setCustomStatus] = useState(profile?.customStatus || '');
   const [avatarFrame, setAvatarFrame] = useState<AvatarFrameKey>(profile?.avatarFrame || 'none');
@@ -175,6 +201,7 @@ export function SettingsModal({
   const [copiedTag, setCopiedTag] = useState(false);
 
   const [deletePassword, setDeletePassword] = useState('');
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [deleteOpen, setDeleteOpen] = useState(false);
 
   // Voice & WebRTC readiness + Mic test
@@ -235,6 +262,7 @@ export function SettingsModal({
     setUsername(profile.username || '');
     setBio(profile.bio || '');
     setBannerColor(profile.bannerColor || '#7C3AED');
+    setBannerPreset(profile.bannerPreset || 'none');
     setPreferredStatus(profile.preferredStatus || 'online');
     setCustomStatus(profile.customStatus || '');
     setAvatarFrame(profile.avatarFrame || 'none');
@@ -331,6 +359,7 @@ export function SettingsModal({
           username,
           bio,
           bannerColor,
+          bannerPreset,
           preferredStatus,
           customStatus,
           avatarFrame,
@@ -376,6 +405,36 @@ export function SettingsModal({
     }
   };
 
+  const uploadBanner = async (file: File | undefined) => {
+    if (!file) return;
+    setBannerUploading(true);
+    const fd = new FormData();
+    fd.append('banner', file);
+    try {
+      const res = await apiFetch<{ profile: UserProfile }>('/users/me/banner', { method: 'POST', body: fd });
+      updateProfileState(res.profile);
+      showToast('Profil banner görseli güncellendi.', 'success');
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : 'Banner yüklenemedi.', 'error');
+    } finally {
+      setBannerUploading(false);
+      if (bannerInputRef.current) bannerInputRef.current.value = '';
+    }
+  };
+
+  const removeBanner = async () => {
+    setBannerUploading(true);
+    try {
+      const res = await apiFetch<{ profile: UserProfile }>('/users/me/banner', { method: 'DELETE' });
+      updateProfileState(res.profile);
+      showToast('Profil banner görseli kaldırıldı.', 'info');
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : 'Banner kaldırılamadı.', 'error');
+    } finally {
+      setBannerUploading(false);
+    }
+  };
+
   const patchSettings = async (patch: Partial<UserSettings>) => {
     try {
       const res = await apiFetch<{ settings: UserSettings }>('/users/me/settings', {
@@ -408,7 +467,13 @@ export function SettingsModal({
 
   const handleDeleteAccount = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!deletePassword.trim()) {
+    const isPasswordless = profile.hasPassword === false;
+    if (isPasswordless) {
+      if (deleteConfirmText.trim().toUpperCase() !== 'HESABI SIL') {
+        setDeletePassError('Onaylamak için büyük harflerle HESABI SIL yazmalısınız.');
+        return;
+      }
+    } else if (!deletePassword.trim()) {
       setDeletePassError('Hesabı silmek için mevcut şifrenizi girmelisiniz.');
       return;
     }
@@ -416,7 +481,9 @@ export function SettingsModal({
     try {
       await apiFetch('/users/me', {
         method: 'DELETE',
-        body: JSON.stringify({ password: deletePassword }),
+        body: JSON.stringify(
+          isPasswordless ? { confirmText: deleteConfirmText.trim().toUpperCase() } : { password: deletePassword }
+        ),
       });
       showToast('Hesabınız kalıcı olarak silindi.', 'info');
       await logout();
@@ -469,8 +536,11 @@ export function SettingsModal({
 
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
+    const isSettingFirstPassword = profile.hasPassword === false;
     const errs: { current?: string; next?: string; confirm?: string } = {};
-    if (!currentPassword) errs.current = 'Mevcut şifreniz boş bırakılamaz.';
+    if (!isSettingFirstPassword && !currentPassword) {
+      errs.current = 'Mevcut şifreniz boş bırakılamaz.';
+    }
     if (!newPassword) {
       errs.next = 'Yeni şifre alanı boş bırakılamaz.';
     } else if (newPassword.length < 8) {
@@ -489,7 +559,7 @@ export function SettingsModal({
       await apiFetch('/auth/change-password', {
         method: 'POST',
         body: JSON.stringify({
-          currentPassword,
+          currentPassword: isSettingFirstPassword ? '' : currentPassword,
           newPassword,
           revokeOthers: revokeOthersOnPass,
         }),
@@ -497,7 +567,8 @@ export function SettingsModal({
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
-      showToast('Şifreniz başarıyla güncellendi.', 'success');
+      await refreshMe();
+      showToast(isSettingFirstPassword ? 'Hesap şifreniz oluşturuldu.' : 'Şifreniz başarıyla güncellendi.', 'success');
       const res = await apiFetch<{ sessions: UserSessionInfo[] }>('/auth/sessions');
       setSessions(res.sessions);
     } catch (err) {
@@ -590,12 +661,16 @@ export function SettingsModal({
 
     setEmailChangeBusy(true);
     try {
-      const res = await apiFetch<{ confirmationCode?: string | null; smtpConfigured: boolean }>('/auth/change-email/request', {
-        method: 'POST',
-        body: JSON.stringify({ newEmail: trimmedEmail, password: emailChangePass }),
-      });
+      const res = await apiFetch<{ verificationCode?: string | null; confirmationCode?: string | null; smtpConfigured: boolean }>(
+        '/auth/change-email/request',
+        {
+          method: 'POST',
+          body: JSON.stringify({ newEmail: trimmedEmail, password: emailChangePass }),
+        }
+      );
       setEmailChangeStep('confirm');
-      if (res.confirmationCode) setEmailChangeConfirmToken(res.confirmationCode);
+      const code = res.verificationCode || res.confirmationCode;
+      if (code) setEmailChangeConfirmToken(code);
       showToast(
         res.smtpConfigured
           ? 'Onay kodu yeni e-posta adresinize gönderildi.'
@@ -737,7 +812,7 @@ export function SettingsModal({
                       }`}
                     >
                       <span className="flex items-center gap-2.5 min-w-0">
-                        <Icon className="w-4 h-4 shrink-0" />
+                        <Icon className={`w-4 h-4 shrink-0 ${active ? 'md:text-white ' + item.iconColor : item.iconColor}`} />
                         <span className="truncate">{item.label}</span>
                       </span>
                       <ChevronRight className="w-4 h-4 opacity-50 md:hidden shrink-0" />
@@ -838,21 +913,17 @@ export function SettingsModal({
               <div className="space-y-5 max-w-2xl">
                 {/* Live Preview Card */}
                 <div className="rounded-2xl border border-slate-200 dark:border-[#29293D] overflow-hidden bg-slate-50 dark:bg-[#10111B]">
-                  <div
-                    className="h-20 relative overflow-hidden"
-                    style={{ background: `linear-gradient(135deg, ${bannerColor}, #0B0B12)` }}
+                  <ProfileBannerSurface
+                    bannerUrl={profile.bannerUrl}
+                    bannerPreset={bannerPreset}
+                    bannerColor={bannerColor}
+                    profileEffect={profileEffect}
+                    className="h-24"
                   >
-                    {profileEffect !== 'none' && (
-                      <div
-                        className={`absolute inset-0 pointer-events-none bg-gradient-to-br ${
-                          PROFILE_EFFECTS.find((e) => e.key === profileEffect)?.gradientClass || ''
-                        }`}
-                      />
-                    )}
-                    <span className="relative z-10 float-right m-2.5 px-2 py-0.5 rounded-md bg-black/45 text-[10px] font-medium text-white/90">
+                    <span className="relative z-10 float-right m-2.5 px-2 py-0.5 rounded-md bg-black/50 backdrop-blur-sm text-[10px] font-medium text-white/95">
                       Canlı Önizleme
                     </span>
-                  </div>
+                  </ProfileBannerSurface>
                   <div className="px-4 pb-4 -mt-8 flex flex-wrap items-end justify-between gap-3 relative z-10">
                     <div className="flex items-end gap-3.5">
                       <div className="ring-4 ring-slate-50 dark:ring-[#10111B] rounded-full">
@@ -894,7 +965,7 @@ export function SettingsModal({
                     <div className="flex items-center gap-2 flex-wrap">
                       <label className="h-8 px-3 rounded-xl border border-slate-200 dark:border-[#29293D] bg-white dark:bg-[#19192A] text-xs font-medium inline-flex items-center gap-1.5 cursor-pointer hover:bg-slate-100 dark:hover:bg-[#222238]">
                         <Upload className="w-3.5 h-3.5" />
-                        Fotoğraf Seç
+                        Avatar Seç
                         <input
                           ref={avatarInputRef}
                           type="file"
@@ -907,7 +978,7 @@ export function SettingsModal({
                         <button
                           type="button"
                           onClick={() => void removeAvatar()}
-                          className="h-8 px-3 rounded-xl border border-[#EF4444]/35 text-[#EF4444] hover:bg-[#EF4444]/10 text-xs font-medium"
+                          className="h-8 px-2.5 rounded-xl border border-[#EF4444]/35 text-[#EF4444] hover:bg-[#EF4444]/10 text-xs font-medium"
                         >
                           Kaldır
                         </button>
@@ -919,6 +990,9 @@ export function SettingsModal({
                       <span>
                         E-posta: <span className="font-mono">{profile.email}</span> ·{' '}
                         {profile.emailVerified ? 'Doğrulandı' : 'Doğrulanmadı'}
+                        {profile.isGoogleLinked && (
+                          <span className="ml-2 text-[#22C55E] font-medium">· Google Bağlı</span>
+                        )}
                       </span>
                       {activityType && activityText && (
                         <span className="text-[#C084FC] font-medium">
@@ -928,330 +1002,503 @@ export function SettingsModal({
                     </p>
                     <div className="space-y-1">
                       <p className="text-[11px] font-semibold text-slate-500 dark:text-[#A1A1B5]">
-                        Kazanılan Rozetler (tıklayarak animasyon ve dağılımı görün)
+                        Kazanılan Rozetler (tıklayarak nadirlik ve kazanım tarihini görün)
                       </p>
                       <BadgeStrip badges={profile.badges || []} showEmpty onOpenCatalog={onOpenBadges} />
                     </div>
                   </div>
                 </div>
 
-                {/* Grouped Profile Editor */}
-                <form noValidate onSubmit={saveProfile} className="space-y-4">
-                  <div className="rounded-2xl border border-slate-200 dark:border-[#29293D] p-4 space-y-3.5 bg-slate-50/60 dark:bg-[#10111B]">
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-[#A1A1B5]">1. Kimlik ve Durum</h4>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div className="space-y-1">
-                        <label className="text-xs font-medium text-slate-500 dark:text-[#A1A1B5]">Görünen Ad</label>
-                        <input
-                          type="text"
-                          value={displayName}
-                          onChange={(e) => {
-                            setDisplayName(e.target.value);
-                            if (profileErrors.displayName) setProfileErrors((p) => ({ ...p, displayName: undefined }));
-                          }}
-                          className={`w-full h-9 px-3 rounded-xl bg-white dark:bg-[#19192A] border text-sm ${
-                            profileErrors.displayName ? 'border-[#EF4444]' : 'border-slate-200 dark:border-[#29293D]'
-                          }`}
-                        />
-                        {profileErrors.displayName && (
-                          <p role="alert" className="text-[11px] font-medium text-[#EF4444]">
-                            {profileErrors.displayName}
-                          </p>
-                        )}
+                {/* Clean 4-Section Sub-Menu Navigation */}
+                <div className="flex items-center gap-1.5 p-1.5 rounded-2xl bg-slate-100 dark:bg-[#10111B] border border-slate-200 dark:border-[#29293D] overflow-x-auto">
+                  {[
+                    { id: 'basic' as const, label: 'Temel Bilgiler' },
+                    { id: 'appearance' as const, label: 'Banner & Dekorasyon' },
+                    { id: 'status' as const, label: 'Durum & Etkinlik' },
+                    { id: 'danger' as const, label: 'Hesap İşlemleri' },
+                  ].map((sub) => (
+                    <button
+                      key={sub.id}
+                      type="button"
+                      onClick={() => setAccountSubTab(sub.id)}
+                      className={`h-9 px-3.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
+                        accountSubTab === sub.id
+                          ? sub.id === 'danger'
+                            ? 'bg-[#EF4444]/15 text-[#EF4444] border border-[#EF4444]/35'
+                            : 'bg-[#7C3AED] text-white shadow-sm shadow-[#7C3AED]/25'
+                          : 'text-slate-600 dark:text-[#A1A1B5] hover:bg-white/70 dark:hover:bg-[#19192A]'
+                      }`}
+                    >
+                      {sub.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Organized Profile Sub-Panels */}
+                {accountSubTab !== 'danger' ? (
+                  <motion.form
+                    key={accountSubTab}
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.2 }}
+                    noValidate
+                    onSubmit={saveProfile}
+                    className="space-y-4"
+                  >
+                    {accountSubTab === 'basic' && (
+                      <div className="rounded-2xl border border-slate-200 dark:border-[#29293D] p-4 space-y-3.5 bg-slate-50/60 dark:bg-[#10111B]">
+                        <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-[#A1A1B5]">
+                          Kimlik & Hakkında Bilgileri
+                        </h4>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <label className="text-xs font-medium text-slate-500 dark:text-[#A1A1B5]">Görünen Ad</label>
+                            <input
+                              type="text"
+                              value={displayName}
+                              onChange={(e) => {
+                                setDisplayName(e.target.value);
+                                if (profileErrors.displayName) setProfileErrors((p) => ({ ...p, displayName: undefined }));
+                              }}
+                              className={`w-full h-9 px-3 rounded-xl bg-white dark:bg-[#19192A] border text-sm ${
+                                profileErrors.displayName ? 'border-[#EF4444]' : 'border-slate-200 dark:border-[#29293D]'
+                              }`}
+                            />
+                            {profileErrors.displayName && (
+                              <p role="alert" className="text-[11px] font-medium text-[#EF4444]">
+                                {profileErrors.displayName}
+                              </p>
+                            )}
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-xs font-medium text-slate-500 dark:text-[#A1A1B5]">
+                              Kullanıcı Adı ve Kalıcı Etiket
+                            </label>
+                            <div
+                              className={`flex items-center h-9 rounded-xl bg-white dark:bg-[#19192A] border overflow-hidden ${
+                                profileErrors.username ? 'border-[#EF4444]' : 'border-slate-200 dark:border-[#29293D]'
+                              }`}
+                            >
+                              <input
+                                type="text"
+                                value={username}
+                                onChange={(e) => {
+                                  setUsername(e.target.value);
+                                  if (profileErrors.username) setProfileErrors((p) => ({ ...p, username: undefined }));
+                                }}
+                                className="flex-1 h-full px-3 bg-transparent text-sm font-mono focus:outline-none min-w-0"
+                              />
+                              <span className="px-2.5 h-full flex items-center bg-slate-100 dark:bg-[#151522] border-l border-slate-200 dark:border-[#29293D] font-mono text-xs font-semibold text-[#7C3AED] dark:text-[#C084FC] shrink-0">
+                                #{profile.discriminator || '0000'}
+                              </span>
+                            </div>
+                            {profileErrors.username && (
+                              <p role="alert" className="text-[11px] font-medium text-[#EF4444]">
+                                {profileErrors.username}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <label className="text-xs font-medium text-slate-500 dark:text-[#A1A1B5]">Hitap / Zamirler</label>
+                            <input
+                              type="text"
+                              maxLength={32}
+                              value={pronouns}
+                              onChange={(e) => setPronouns(e.target.value)}
+                              placeholder="ör. o / geliştirici"
+                              className="w-full h-9 px-3 rounded-xl bg-white dark:bg-[#19192A] border border-slate-200 dark:border-[#29293D] text-sm"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-xs font-medium text-slate-500 dark:text-[#A1A1B5]">Web Sitesi / Bağlantı</label>
+                            <input
+                              type="text"
+                              maxLength={160}
+                              value={websiteUrl}
+                              onChange={(e) => setWebsiteUrl(e.target.value)}
+                              placeholder="https://orbit.chat"
+                              className="w-full h-9 px-3 rounded-xl bg-white dark:bg-[#19192A] border border-slate-200 dark:border-[#29293D] text-sm"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-xs font-medium text-slate-500 dark:text-[#A1A1B5]">Biyografi</label>
+                          <textarea
+                            rows={3}
+                            value={bio}
+                            onChange={(e) => setBio(e.target.value)}
+                            placeholder="Kendinizden kısaca bahsedin..."
+                            className="w-full p-3 rounded-xl bg-white dark:bg-[#19192A] border border-slate-200 dark:border-[#29293D] text-sm"
+                          />
+                        </div>
                       </div>
-                      <div className="space-y-1">
-                        <label className="text-xs font-medium text-slate-500 dark:text-[#A1A1B5]">Kullanıcı Adı ve Kalıcı Etiket</label>
-                        <div
-                          className={`flex items-center h-9 rounded-xl bg-white dark:bg-[#19192A] border overflow-hidden ${
-                            profileErrors.username ? 'border-[#EF4444]' : 'border-slate-200 dark:border-[#29293D]'
-                          }`}
-                        >
+                    )}
+
+                    {accountSubTab === 'appearance' && (
+                      <div className="rounded-2xl border border-slate-200 dark:border-[#29293D] p-4 space-y-4 bg-slate-50/60 dark:bg-[#10111B]">
+                        <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-[#A1A1B5]">
+                          Banner, Hareketli Şablon & Avatar Dekorasyonu
+                        </h4>
+
+                        {/* Custom Banner Image Upload */}
+                        <div className="p-3 rounded-xl bg-white dark:bg-[#19192A] border border-slate-200 dark:border-[#29293D] flex flex-wrap items-center justify-between gap-3">
+                          <div>
+                            <p className="text-xs font-semibold flex items-center gap-1.5">
+                              <ImageIcon className="w-3.5 h-3.5 text-[#A855F7]" />
+                              Özel Banner Görseli
+                            </p>
+                            <p className="text-[11px] text-slate-500 dark:text-[#A1A1B5]">
+                              Profil kartının üstüne kendi görselinizi veya GIF banner’ınızı yükleyin.
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <label className="h-8 px-3 rounded-xl bg-[#7C3AED] hover:bg-[#6D28D9] text-white text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer">
+                              <Upload className="w-3.5 h-3.5" />
+                              {bannerUploading ? 'Yükleniyor...' : 'Banner Yükle'}
+                              <input
+                                ref={bannerInputRef}
+                                type="file"
+                                accept="image/*"
+                                disabled={bannerUploading}
+                                className="hidden"
+                                onChange={(e) => void uploadBanner(e.target.files?.[0])}
+                              />
+                            </label>
+                            {profile.bannerUrl && (
+                              <button
+                                type="button"
+                                disabled={bannerUploading}
+                                onClick={() => void removeBanner()}
+                                className="h-8 px-2.5 rounded-xl border border-[#EF4444]/40 text-[#EF4444] hover:bg-[#EF4444]/10 text-xs font-medium"
+                              >
+                                Görseli Kaldır
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Animated Banner Presets */}
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-medium text-slate-500 dark:text-[#A1A1B5]">
+                            Hareketli Banner Şablonu
+                          </label>
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                            {BANNER_PRESETS.map((preset) => {
+                              const locked = Boolean(preset.nitroOnly && profile.nitroTier !== 'nitro');
+                              return (
+                                <button
+                                  key={preset.key}
+                                  type="button"
+                                  onClick={() => {
+                                    if (locked) {
+                                      showToast('Bu hareketli banner şablonu ORBIT Nitro üyelerine özeldir.', 'info');
+                                      onOpenNitro?.();
+                                      return;
+                                    }
+                                    setBannerPreset(preset.key);
+                                  }}
+                                  className={`p-2 rounded-xl border text-left transition-all ${
+                                    bannerPreset === preset.key
+                                      ? 'border-[#A855F7] ring-1 ring-[#A855F7]/50 bg-[#7C3AED]/10'
+                                      : 'border-slate-200 dark:border-[#29293D] bg-white dark:bg-[#19192A]'
+                                  } ${locked ? 'opacity-70' : ''}`}
+                                >
+                                  <div
+                                    className={`h-7 rounded-lg mb-1.5 ${preset.previewClass}`}
+                                    style={
+                                      preset.key === 'none'
+                                        ? { background: `linear-gradient(135deg, ${bannerColor}, #10111B)` }
+                                        : undefined
+                                    }
+                                  />
+                                  <div className="flex items-center justify-between gap-1 text-[11px] font-medium">
+                                    <span className="truncate">{preset.label}</span>
+                                    {preset.nitroOnly && (
+                                      <span className="text-[9px] font-bold text-[#C084FC] shrink-0">NITRO</span>
+                                    )}
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div className="space-y-1.5">
+                            <label className="text-xs font-medium text-slate-500 dark:text-[#A1A1B5] flex items-center gap-1.5">
+                              <Sparkles className="w-3.5 h-3.5 text-[#A855F7]" />
+                              Hareketli Avatar Dekorasyonu
+                            </label>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              {AVATAR_FRAMES.map((fr) => {
+                                const locked = Boolean(fr.nitroOnly && profile.nitroTier !== 'nitro');
+                                return (
+                                  <button
+                                    key={fr.key}
+                                    type="button"
+                                    onClick={() => {
+                                      if (locked) {
+                                        showToast('Bu dekorasyon ORBIT Nitro üyelerine özeldir.', 'info');
+                                        onOpenNitro?.();
+                                        return;
+                                      }
+                                      setAvatarFrame(fr.key);
+                                    }}
+                                    className={`h-8 px-2.5 rounded-lg border text-xs font-medium flex items-center gap-1.5 ${
+                                      avatarFrame === fr.key
+                                        ? 'border-[#A855F7] bg-[#7C3AED]/15 text-[#7C3AED] dark:text-[#C084FC]'
+                                        : 'border-slate-200 dark:border-[#29293D] bg-white dark:bg-[#19192A] hover:border-[#7C3AED]/50'
+                                    } ${locked ? 'opacity-70' : ''}`}
+                                  >
+                                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: fr.swatch }} />
+                                    <span>{fr.label}</span>
+                                    {fr.nitroOnly && (
+                                      <span className="text-[9px] font-bold uppercase text-[#C084FC]">NITRO</span>
+                                    )}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          <div className="space-y-3">
+                            <div className="space-y-1.5">
+                              <label className="text-xs font-medium text-slate-500 dark:text-[#A1A1B5]">Profil Afiş Efekti</label>
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                {PROFILE_EFFECTS.map((ef) => {
+                                  const locked = Boolean(ef.nitroOnly && profile.nitroTier !== 'nitro');
+                                  return (
+                                    <button
+                                      key={ef.key}
+                                      type="button"
+                                      onClick={() => {
+                                        if (locked) {
+                                          showToast('Bu profil efekti ORBIT Nitro üyelerine özeldir.', 'info');
+                                          onOpenNitro?.();
+                                          return;
+                                        }
+                                        setProfileEffect(ef.key);
+                                      }}
+                                      className={`h-8 px-2.5 rounded-lg border text-xs font-medium flex items-center gap-1.5 ${
+                                        profileEffect === ef.key
+                                          ? 'border-[#A855F7] bg-[#A855F7]/15 text-[#A855F7] dark:text-[#C084FC]'
+                                          : 'border-slate-200 dark:border-[#29293D] bg-white dark:bg-[#19192A] hover:border-[#7C3AED]/50'
+                                      } ${locked ? 'opacity-70' : ''}`}
+                                    >
+                                      <span>{ef.label}</span>
+                                      {ef.nitroOnly && (
+                                        <span className="text-[9px] font-bold uppercase text-[#C084FC]">NITRO</span>
+                                      )}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+
+                            <div className="space-y-1">
+                              <label className="text-xs font-medium text-slate-500 dark:text-[#A1A1B5]">
+                                İsim Yanı Öne Çıkan Rozet
+                              </label>
+                              <select
+                                value={featuredBadge}
+                                onChange={(e) => setFeaturedBadge(e.target.value as BadgeKey | '')}
+                                className="w-full h-9 px-3 rounded-xl bg-white dark:bg-[#19192A] border border-slate-200 dark:border-[#29293D] text-xs"
+                              >
+                                <option value="">Gösterme</option>
+                                {(profile.badges || []).map((b) => (
+                                  <option key={b.key} value={b.key}>
+                                    {b.label} ({b.rarity})
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+
+                            <div className="space-y-1">
+                              <label className="text-xs font-medium text-slate-500 dark:text-[#A1A1B5] block">
+                                Düz Afiş Rengi
+                              </label>
+                              <SingleColorPickerButton
+                                label="Afiş Rengi Seç"
+                                value={bannerColor}
+                                onChange={setBannerColor}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {accountSubTab === 'status' && (
+                      <div className="rounded-2xl border border-slate-200 dark:border-[#29293D] p-4 space-y-4 bg-slate-50/60 dark:bg-[#10111B]">
+                        <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-[#A1A1B5]">
+                          Durum & Canlı Etkinlik
+                        </h4>
+                        <div className="space-y-1.5">
+                          <label className="text-xs font-medium text-slate-500 dark:text-[#A1A1B5]">Hızlı Durum Seçimi</label>
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                            {STATUS_PILLS.map((st) => (
+                              <button
+                                key={st.id}
+                                type="button"
+                                onClick={() => setPreferredStatus(st.id)}
+                                className={`h-9 px-2.5 rounded-xl border text-xs font-medium flex items-center gap-2 transition-colors ${
+                                  preferredStatus === st.id
+                                    ? 'border-[#A855F7] bg-[#7C3AED]/15 text-[#7C3AED] dark:text-[#C084FC]'
+                                    : 'border-slate-200 dark:border-[#29293D] bg-white dark:bg-[#19192A] text-slate-600 dark:text-[#A1A1B5]'
+                                }`}
+                              >
+                                <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${st.dot}`} />
+                                <span className="truncate">{st.label}</span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-xs font-medium text-slate-500 dark:text-[#A1A1B5]">Özel Durum Mesajı</label>
                           <input
                             type="text"
-                            value={username}
-                            onChange={(e) => {
-                              setUsername(e.target.value);
-                              if (profileErrors.username) setProfileErrors((p) => ({ ...p, username: undefined }));
-                            }}
-                            className="flex-1 h-full px-3 bg-transparent text-sm font-mono focus:outline-none min-w-0"
+                            value={customStatus}
+                            onChange={(e) => setCustomStatus(e.target.value)}
+                            placeholder="Şu an ne yapıyorsunuz?"
+                            className="w-full h-9 px-3 rounded-xl bg-white dark:bg-[#19192A] border border-slate-200 dark:border-[#29293D] text-sm"
                           />
-                          <span className="px-2.5 h-full flex items-center bg-slate-100 dark:bg-[#151522] border-l border-slate-200 dark:border-[#29293D] font-mono text-xs font-semibold text-[#7C3AED] dark:text-[#C084FC] shrink-0">
-                            #{profile.discriminator || '0000'}
-                          </span>
                         </div>
-                        {profileErrors.username && (
+
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          <div className="space-y-1">
+                            <label className="text-xs font-medium text-slate-500 dark:text-[#A1A1B5]">Etkinlik Türü</label>
+                            <select
+                              value={activityType}
+                              onChange={(e) => setActivityType(e.target.value as ActivityTypeKey)}
+                              className="w-full h-9 px-3 rounded-xl bg-white dark:bg-[#19192A] border border-slate-200 dark:border-[#29293D] text-sm"
+                            >
+                              {(Object.keys(ACTIVITY_LABELS) as ActivityTypeKey[]).map((k) => (
+                                <option key={k || 'none'} value={k}>
+                                  {ACTIVITY_LABELS[k]}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="sm:col-span-2 space-y-1">
+                            <label className="text-xs font-medium text-slate-500 dark:text-[#A1A1B5]">Etkinlik Açıklaması</label>
+                            <input
+                              type="text"
+                              maxLength={80}
+                              disabled={!activityType}
+                              value={activityText}
+                              onChange={(e) => setActivityText(e.target.value)}
+                              placeholder={activityType ? 'ör. TypeScript & WebRTC...' : 'Önce etkinlik türü seçin'}
+                              className="w-full h-9 px-3 rounded-xl bg-white dark:bg-[#19192A] border border-slate-200 dark:border-[#29293D] text-sm disabled:opacity-50"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="flex items-center justify-end">
+                      <button
+                        type="submit"
+                        disabled={saving}
+                        className="h-10 px-6 rounded-xl bg-[#7C3AED] hover:bg-[#6D28D9] disabled:opacity-60 text-white text-sm font-semibold shadow-sm shadow-[#7C3AED]/25 transition-colors"
+                      >
+                        {saving ? 'Kaydediliyor...' : 'Profili Kaydet'}
+                      </button>
+                    </div>
+                  </motion.form>
+                ) : (
+                  <motion.div
+                    key="danger"
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.2 }}
+                    className="rounded-2xl border border-[#EF4444]/30 p-4 space-y-4 bg-[#EF4444]/[0.04]"
+                  >
+                    <div className="flex items-center justify-between gap-3 flex-wrap">
+                      <div>
+                        <p className="text-sm font-semibold text-[#EF4444]">Hesabı Kalıcı Olarak Sil</p>
+                        <p className="text-xs text-slate-500 dark:text-[#A1A1B5]">
+                          Tüm mesajlarınız, sunucu üyelikleriniz ve profil verileriniz kalıcı olarak kaldırılır. Bu işlem geri alınamaz.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDeleteOpen(!deleteOpen);
+                          setDeletePassError('');
+                        }}
+                        className="h-9 px-3.5 rounded-xl border border-[#EF4444]/40 text-[#EF4444] text-xs font-semibold flex items-center gap-1.5 hover:bg-[#EF4444]/10"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        {deleteOpen ? 'Vazgeç' : 'Hesabı Sil'}
+                      </button>
+                    </div>
+
+                    {deleteOpen && (
+                      <form noValidate onSubmit={handleDeleteAccount} className="space-y-2 pt-2 border-t border-[#EF4444]/20">
+                        {profile.hasPassword === false ? (
+                          <div className="space-y-1.5">
+                            <p className="text-xs text-slate-600 dark:text-[#A1A1B5]">
+                              Google ile oturum açtığınız için onay olarak <strong className="font-mono text-[#EF4444]">HESABI SIL</strong> yazın:
+                            </p>
+                            <div className="flex gap-2">
+                              <input
+                                type="text"
+                                value={deleteConfirmText}
+                                onChange={(e) => {
+                                  setDeleteConfirmText(e.target.value);
+                                  if (deletePassError) setDeletePassError('');
+                                }}
+                                placeholder="HESABI SIL"
+                                className={`flex-1 h-9 px-3 rounded-xl bg-white dark:bg-[#19192A] border text-xs font-mono ${
+                                  deletePassError ? 'border-[#EF4444]' : 'border-[#EF4444]/40'
+                                }`}
+                              />
+                              <button
+                                type="submit"
+                                className="h-9 px-4 rounded-xl bg-[#EF4444] hover:bg-red-600 text-white text-xs font-semibold flex items-center gap-1"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                Kalıcı Sil
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex gap-2">
+                            <input
+                              type="password"
+                              value={deletePassword}
+                              onChange={(e) => {
+                                setDeletePassword(e.target.value);
+                                if (deletePassError) setDeletePassError('');
+                              }}
+                              placeholder="Onaylamak için şifrenizi girin"
+                              className={`flex-1 h-9 px-3 rounded-xl bg-white dark:bg-[#19192A] border text-xs ${
+                                deletePassError ? 'border-[#EF4444]' : 'border-[#EF4444]/40'
+                              }`}
+                            />
+                            <button
+                              type="submit"
+                              className="h-9 px-4 rounded-xl bg-[#EF4444] hover:bg-red-600 text-white text-xs font-semibold flex items-center gap-1"
+                            >
+                              <Key className="w-3.5 h-3.5" />
+                              Onayla
+                            </button>
+                          </div>
+                        )}
+                        {deletePassError && (
                           <p role="alert" className="text-[11px] font-medium text-[#EF4444]">
-                            {profileErrors.username}
+                            {deletePassError}
                           </p>
                         )}
-                      </div>
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-slate-500 dark:text-[#A1A1B5]">Hızlı Durum Seçimi</label>
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                        {STATUS_PILLS.map((st) => (
-                          <button
-                            key={st.id}
-                            type="button"
-                            onClick={() => setPreferredStatus(st.id)}
-                            className={`h-9 px-2.5 rounded-xl border text-xs font-medium flex items-center gap-2 transition-colors ${
-                              preferredStatus === st.id
-                                ? 'border-[#A855F7] bg-[#7C3AED]/15 text-[#7C3AED] dark:text-[#C084FC]'
-                                : 'border-slate-200 dark:border-[#29293D] bg-white dark:bg-[#19192A] text-slate-600 dark:text-[#A1A1B5]'
-                            }`}
-                          >
-                            <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${st.dot}`} />
-                            <span className="truncate">{st.label}</span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="text-xs font-medium text-slate-500 dark:text-[#A1A1B5]">Özel Durum Mesajı</label>
-                      <input
-                        type="text"
-                        value={customStatus}
-                        onChange={(e) => setCustomStatus(e.target.value)}
-                        placeholder="Şu an ne yapıyorsunuz?"
-                        className="w-full h-9 px-3 rounded-xl bg-white dark:bg-[#19192A] border border-slate-200 dark:border-[#29293D] text-sm"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="rounded-2xl border border-slate-200 dark:border-[#29293D] p-4 space-y-3.5 bg-slate-50/60 dark:bg-[#10111B]">
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-[#A1A1B5]">2. Görünüm ve Çerçeve</h4>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div className="space-y-3">
-                        <div className="space-y-1.5">
-                          <label className="text-xs font-medium text-slate-500 dark:text-[#A1A1B5] flex items-center gap-1.5">
-                            <Sparkles className="w-3.5 h-3.5 text-[#A855F7]" />
-                            Avatar Çerçevesi
-                          </label>
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            {AVATAR_FRAMES.map((fr) => {
-                              const locked = Boolean(fr.nitroOnly && profile.nitroTier !== 'nitro');
-                              return (
-                                <button
-                                  key={fr.key}
-                                  type="button"
-                                  onClick={() => {
-                                    if (locked) {
-                                      showToast('Bu çerçeve ORBIT Nitro üyelerine özeldir.', 'info');
-                                      onOpenNitro?.();
-                                      return;
-                                    }
-                                    setAvatarFrame(fr.key);
-                                  }}
-                                  className={`h-8 px-2.5 rounded-lg border text-xs font-medium flex items-center gap-1.5 ${
-                                    avatarFrame === fr.key
-                                      ? 'border-[#A855F7] bg-[#7C3AED]/15 text-[#7C3AED] dark:text-[#C084FC]'
-                                      : 'border-slate-200 dark:border-[#29293D] bg-white dark:bg-[#19192A] hover:border-[#7C3AED]/50'
-                                  } ${locked ? 'opacity-70' : ''}`}
-                                >
-                                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: fr.swatch }} />
-                                  <span>{fr.label}</span>
-                                  {fr.nitroOnly && (
-                                    <span className="text-[9px] font-bold uppercase text-[#C084FC]">NITRO</span>
-                                  )}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-
-                        <div className="space-y-1.5">
-                          <label className="text-xs font-medium text-slate-500 dark:text-[#A1A1B5]">Profil Afiş Efekti</label>
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            {PROFILE_EFFECTS.map((ef) => {
-                              const locked = Boolean(ef.nitroOnly && profile.nitroTier !== 'nitro');
-                              return (
-                                <button
-                                  key={ef.key}
-                                  type="button"
-                                  onClick={() => {
-                                    if (locked) {
-                                      showToast('Bu profil efekti ORBIT Nitro üyelerine özeldir.', 'info');
-                                      onOpenNitro?.();
-                                      return;
-                                    }
-                                    setProfileEffect(ef.key);
-                                  }}
-                                  className={`h-8 px-2.5 rounded-lg border text-xs font-medium flex items-center gap-1.5 ${
-                                    profileEffect === ef.key
-                                      ? 'border-[#A855F7] bg-[#A855F7]/15 text-[#A855F7] dark:text-[#C084FC]'
-                                      : 'border-slate-200 dark:border-[#29293D] bg-white dark:bg-[#19192A] hover:border-[#7C3AED]/50'
-                                  } ${locked ? 'opacity-70' : ''}`}
-                                >
-                                  <span>{ef.label}</span>
-                                  {ef.nitroOnly && (
-                                    <span className="text-[9px] font-bold uppercase text-[#C084FC]">NITRO</span>
-                                  )}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="space-y-3">
-                        <div className="space-y-1">
-                          <label className="text-xs font-medium text-slate-500 dark:text-[#A1A1B5]">İsim Yanı Öne Çıkan Rozet</label>
-                          <select
-                            value={featuredBadge}
-                            onChange={(e) => setFeaturedBadge(e.target.value as BadgeKey | '')}
-                            className="w-full h-9 px-3 rounded-xl bg-white dark:bg-[#19192A] border border-slate-200 dark:border-[#29293D] text-xs"
-                          >
-                            <option value="">Gösterme</option>
-                            {(profile.badges || []).map((b) => (
-                              <option key={b.key} value={b.key}>
-                                {b.label} ({b.rarity})
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-
-                        <div className="space-y-1">
-                          <label className="text-xs font-medium text-slate-500 dark:text-[#A1A1B5] block">Profil Afiş (Banner) Rengi</label>
-                          <SingleColorPickerButton
-                            label="Afiş Rengi Seç"
-                            value={bannerColor}
-                            onChange={setBannerColor}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="rounded-2xl border border-slate-200 dark:border-[#29293D] p-4 space-y-3.5 bg-slate-50/60 dark:bg-[#10111B]">
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-[#A1A1B5]">3. Hakkında ve Etkinlik</h4>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div className="space-y-1">
-                        <label className="text-xs font-medium text-slate-500 dark:text-[#A1A1B5]">Hitap / Zamirler</label>
-                        <input
-                          type="text"
-                          maxLength={32}
-                          value={pronouns}
-                          onChange={(e) => setPronouns(e.target.value)}
-                          placeholder="ör. o / kurucu"
-                          className="w-full h-9 px-3 rounded-xl bg-white dark:bg-[#19192A] border border-slate-200 dark:border-[#29293D] text-sm"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-xs font-medium text-slate-500 dark:text-[#A1A1B5]">Web Sitesi / Bağlantı</label>
-                        <input
-                          type="text"
-                          maxLength={160}
-                          value={websiteUrl}
-                          onChange={(e) => setWebsiteUrl(e.target.value)}
-                          placeholder="https://orbit.chat"
-                          className="w-full h-9 px-3 rounded-xl bg-white dark:bg-[#19192A] border border-slate-200 dark:border-[#29293D] text-sm"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                      <div className="space-y-1">
-                        <label className="text-xs font-medium text-slate-500 dark:text-[#A1A1B5]">Etkinlik Türü</label>
-                        <select
-                          value={activityType}
-                          onChange={(e) => setActivityType(e.target.value as ActivityTypeKey)}
-                          className="w-full h-9 px-3 rounded-xl bg-white dark:bg-[#19192A] border border-slate-200 dark:border-[#29293D] text-sm"
-                        >
-                          {(Object.keys(ACTIVITY_LABELS) as ActivityTypeKey[]).map((k) => (
-                            <option key={k || 'none'} value={k}>
-                              {ACTIVITY_LABELS[k]}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="sm:col-span-2 space-y-1">
-                        <label className="text-xs font-medium text-slate-500 dark:text-[#A1A1B5]">Etkinlik Açıklaması</label>
-                        <input
-                          type="text"
-                          maxLength={80}
-                          disabled={!activityType}
-                          value={activityText}
-                          onChange={(e) => setActivityText(e.target.value)}
-                          placeholder={activityType ? 'ör. TypeScript & WebRTC...' : 'Önce etkinlik türü seçin'}
-                          className="w-full h-9 px-3 rounded-xl bg-white dark:bg-[#19192A] border border-slate-200 dark:border-[#29293D] text-sm disabled:opacity-50"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="text-xs font-medium text-slate-500 dark:text-[#A1A1B5]">Biyografi</label>
-                      <textarea
-                        rows={3}
-                        value={bio}
-                        onChange={(e) => setBio(e.target.value)}
-                        placeholder="Kendinizden kısaca bahsedin..."
-                        className="w-full p-3 rounded-xl bg-white dark:bg-[#19192A] border border-slate-200 dark:border-[#29293D] text-sm"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-end">
-                    <button
-                      type="submit"
-                      disabled={saving}
-                      className="h-10 px-6 rounded-xl bg-[#7C3AED] hover:bg-[#6D28D9] disabled:opacity-60 text-white text-sm font-semibold shadow-sm shadow-[#7C3AED]/25 transition-colors"
-                    >
-                      {saving ? 'Kaydediliyor...' : 'Profili Kaydet'}
-                    </button>
-                  </div>
-                </form>
-
-                <div className="pt-4 border-t border-slate-200 dark:border-[#29293D] space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-semibold text-[#EF4444]">Hesabı Sil</p>
-                      <p className="text-xs text-slate-500 dark:text-[#A1A1B5]">Bu işlem geri alınamaz.</p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setDeleteOpen(!deleteOpen);
-                        setDeletePassError('');
-                      }}
-                      className="h-9 px-3.5 rounded-xl border border-[#EF4444]/40 text-[#EF4444] text-xs font-semibold flex items-center gap-1.5 hover:bg-[#EF4444]/10"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      Hesabı Sil
-                    </button>
-                  </div>
-                  {deleteOpen && (
-                    <form noValidate onSubmit={handleDeleteAccount} className="space-y-1.5">
-                      <div className="flex gap-2">
-                        <input
-                          type="password"
-                          value={deletePassword}
-                          onChange={(e) => {
-                            setDeletePassword(e.target.value);
-                            if (deletePassError) setDeletePassError('');
-                          }}
-                          placeholder="Onaylamak için şifrenizi girin"
-                          className={`flex-1 h-9 px-3 rounded-xl bg-slate-100 dark:bg-[#19192A] border text-xs ${
-                            deletePassError ? 'border-[#EF4444]' : 'border-[#EF4444]/40'
-                          }`}
-                        />
-                        <button
-                          type="submit"
-                          className="h-9 px-4 rounded-xl bg-[#EF4444] hover:bg-red-600 text-white text-xs font-semibold flex items-center gap-1"
-                        >
-                          <Key className="w-3.5 h-3.5" />
-                          Onayla
-                        </button>
-                      </div>
-                      {deletePassError && (
-                        <p role="alert" className="text-[11px] font-medium text-[#EF4444]">
-                          {deletePassError}
-                        </p>
-                      )}
-                    </form>
-                  )}
-                </div>
+                      </form>
+                    )}
+                  </motion.div>
+                )}
               </div>
             )}
 
@@ -1259,25 +1506,57 @@ export function SettingsModal({
               <div className="space-y-5 max-w-lg">
                 <div className="space-y-2">
                   <label className="text-xs font-semibold text-slate-500 dark:text-[#A1A1B5]">Tema</label>
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-3 gap-2.5">
                     {[
-                      { id: 'dark', label: 'Koyu' },
-                      { id: 'light', label: 'Açık' },
-                      { id: 'system', label: 'Sistem' },
-                    ].map((opt) => (
-                      <button
-                        key={opt.id}
-                        type="button"
-                        onClick={() => void patchSettings({ theme: opt.id as UserSettings['theme'] })}
-                        className={`h-10 rounded-xl border text-xs font-semibold ${
-                          settings.theme === opt.id
-                            ? 'border-[#A855F7] bg-[#7C3AED]/15 text-[#7C3AED] dark:text-[#C084FC]'
-                            : 'border-slate-200 dark:border-[#29293D]'
-                        }`}
-                      >
-                        {opt.label}
-                      </button>
-                    ))}
+                      {
+                        id: 'dark',
+                        label: 'Koyu',
+                        icon: Moon,
+                        swatch: 'bg-[#0F101B] border-[#2C2D46]',
+                        barTop: 'bg-[#7C3AED]',
+                        barSub: 'bg-slate-600/60',
+                      },
+                      {
+                        id: 'light',
+                        label: 'Açık',
+                        icon: Sun,
+                        swatch: 'bg-[#F8FAFC] border-slate-200',
+                        barTop: 'bg-[#7C3AED]',
+                        barSub: 'bg-slate-300',
+                      },
+                      {
+                        id: 'system',
+                        label: 'Sistem',
+                        icon: Monitor,
+                        swatch: 'bg-gradient-to-br from-[#0F101B] via-[#1C1E33] to-[#F8FAFC] border-cyan-500/40',
+                        barTop: 'bg-cyan-500',
+                        barSub: 'bg-slate-400/60',
+                      },
+                    ].map((opt) => {
+                      const ThemeIcon = opt.icon;
+                      const selected = settings.theme === opt.id;
+                      return (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          onClick={() => void patchSettings({ theme: opt.id as UserSettings['theme'] })}
+                          className={`p-2.5 rounded-2xl border text-left transition-all ${
+                            selected
+                              ? 'border-[#A855F7] bg-[#7C3AED]/10 text-[#7C3AED] dark:text-[#C084FC] ring-2 ring-[#A855F7]/20'
+                              : 'border-slate-200 dark:border-[#29293D] hover:bg-slate-50 dark:hover:bg-[#19192A]'
+                          }`}
+                        >
+                          <div className={`h-10 rounded-xl border p-2 mb-2 flex flex-col justify-between ${opt.swatch}`}>
+                            <div className={`w-6 h-1.5 rounded-full ${opt.barTop}`} />
+                            <div className={`w-10 h-1.5 rounded-full ${opt.barSub}`} />
+                          </div>
+                          <span className="text-xs font-semibold inline-flex items-center gap-1.5">
+                            <ThemeIcon className="w-3.5 h-3.5" />
+                            {opt.label}
+                          </span>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
@@ -1748,29 +2027,38 @@ export function SettingsModal({
                   onSubmit={handleChangePassword}
                   className="p-4 rounded-2xl border border-slate-200 dark:border-[#29293D] bg-slate-50/70 dark:bg-[#10111B] space-y-3"
                 >
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-[#A1A1B5]">
-                    Şifre Değiştir
-                  </h4>
+                  <div>
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-[#A1A1B5]">
+                      {profile.hasPassword === false ? 'Hesap Şifresi Oluştur (Google Hesabı)' : 'Şifre Değiştir'}
+                    </h4>
+                    {profile.hasPassword === false && (
+                      <p className="text-[11px] text-slate-500 dark:text-[#A1A1B5] mt-0.5">
+                        Google ile kayıt olduğunuz için henüz şifreniz yok. Buradan belirleyerek e-posta değişikliği ve klasik girişte kullanabilirsiniz.
+                      </p>
+                    )}
+                  </div>
                   <div className="space-y-2">
-                    <div className="space-y-1">
-                      <input
-                        type="password"
-                        value={currentPassword}
-                        onChange={(e) => {
-                          setCurrentPassword(e.target.value);
-                          if (passwordErrors.current) setPasswordErrors((p) => ({ ...p, current: undefined }));
-                        }}
-                        placeholder="Mevcut şifreniz"
-                        className={`w-full h-9 px-3 rounded-xl bg-white dark:bg-[#19192A] border text-sm ${
-                          passwordErrors.current ? 'border-[#EF4444]' : 'border-slate-200 dark:border-[#29293D]'
-                        }`}
-                      />
-                      {passwordErrors.current && (
-                        <p role="alert" className="text-[11px] font-medium text-[#EF4444]">
-                          {passwordErrors.current}
-                        </p>
-                      )}
-                    </div>
+                    {profile.hasPassword !== false && (
+                      <div className="space-y-1">
+                        <input
+                          type="password"
+                          value={currentPassword}
+                          onChange={(e) => {
+                            setCurrentPassword(e.target.value);
+                            if (passwordErrors.current) setPasswordErrors((p) => ({ ...p, current: undefined }));
+                          }}
+                          placeholder="Mevcut şifreniz"
+                          className={`w-full h-9 px-3 rounded-xl bg-white dark:bg-[#19192A] border text-sm ${
+                            passwordErrors.current ? 'border-[#EF4444]' : 'border-slate-200 dark:border-[#29293D]'
+                          }`}
+                        />
+                        {passwordErrors.current && (
+                          <p role="alert" className="text-[11px] font-medium text-[#EF4444]">
+                            {passwordErrors.current}
+                          </p>
+                        )}
+                      </div>
+                    )}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       <div className="space-y-1">
                         <input
@@ -2280,6 +2568,19 @@ export function SettingsModal({
                   )}
                 </div>
               </div>
+            )}
+
+            {(tab === 'about' || tab === 'guide' || tab === 'terms' || tab === 'policies') && (
+              <OrbitDocsSection
+                tab={tab}
+                onNavigateTab={(target) => selectCategoryTab(target)}
+                onOpenNitro={onOpenNitro}
+                onOpenBadges={onOpenBadges}
+                onOpenAchievements={onOpenAchievements}
+                onExportData={() => void handleExportAccountData()}
+                exportingData={exportingData}
+                onCloseModal={onClose}
+              />
             )}
           </div>
         </div>

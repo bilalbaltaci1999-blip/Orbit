@@ -1,8 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import {
   AlertCircle,
   Clock,
   Eraser,
+  Gamepad2,
   Hand,
   Headphones,
   Keyboard,
@@ -20,6 +22,7 @@ import {
   RotateCcw,
   Settings2,
   Signal,
+  SmilePlus,
   Sparkles,
   Timer,
   Users,
@@ -27,6 +30,7 @@ import {
   VideoOff,
   Volume2,
   VolumeX,
+  X,
 } from 'lucide-react';
 import { apiFetch, ApiError } from '../client/api.ts';
 import { useAuth } from '../client/AuthContext.tsx';
@@ -38,6 +42,7 @@ import { wsClient } from '../client/wsClient.ts';
 import type { PomodoroState, VoiceParticipant, WhiteboardStroke } from '../shared/types.ts';
 import { SingleColorPickerButton } from './SingleColorPickerButton.tsx';
 import { UserAvatar } from './UserAvatar.tsx';
+import { VoiceGamesPanel } from './VoiceGamesPanel.tsx';
 
 const VOICE_REACTION_EMOJIS = ['👏', '🔥', '😂', '🚀', '💜', '⚡'];
 
@@ -249,7 +254,12 @@ export function VoiceStageView({
 
   const [showDevices, setShowDevices] = useState(false);
   const [focusedUserId, setFocusedUserId] = useState<string | null>(null);
-  const [stageTab, setStageTab] = useState<'participants' | 'whiteboard' | 'pomodoro'>('participants');
+  const [spotlightDismissed, setSpotlightDismissed] = useState(false);
+  const [reactionsOpen, setReactionsOpen] = useState(false);
+  const [soundboardOpen, setSoundboardOpen] = useState(false);
+  const [stageTab, setStageTab] = useState<'participants' | 'games' | 'whiteboard' | 'pomodoro'>('participants');
+  const spotlightContainerRef = useRef<HTMLDivElement>(null);
+  const spotlightVideoRef = useRef<HTMLVideoElement>(null);
 
   // Whiteboard & stage accent state
   const [strokes, setStrokes] = useState<WhiteboardStroke[]>([]);
@@ -282,6 +292,11 @@ export function VoiceStageView({
       localVideoRef.current.srcObject = voice.localStream;
     }
   }, [voice.localStream, voice.videoEnabled, isJoinedThisRoom]);
+
+  // Reset spotlight dismissal when screen share toggles or focus changes
+  useEffect(() => {
+    setSpotlightDismissed(false);
+  }, [voice.screenSharing, focusedUserId]);
 
   // Enforce server mute
   const myParticipant = participants.find((p) => p.userId === me?.userId);
@@ -443,6 +458,105 @@ export function VoiceStageView({
   const remoteStageSpeakers = stageSpeakers.filter((p) => p.userId !== me?.userId);
   const amIStageSpeaker = !isStage || myParticipant?.isSpeaker !== false;
 
+  const activeBroadcast = useMemo(() => {
+    if (!isJoinedThisRoom) return null;
+
+    if (focusedUserId) {
+      if (me && focusedUserId === me.userId) {
+        if (voice.screenSharing && voice.localScreenStream) {
+          return {
+            key: `local-screen-${me.userId}`,
+            title: `${me.displayName} · Ekran Yayını`,
+            stream: voice.localScreenStream,
+            isScreenShare: true,
+            isLocal: true,
+          };
+        }
+        if (voice.videoEnabled && voice.localStream) {
+          return {
+            key: `local-cam-${me.userId}`,
+            title: `${me.displayName} · Kamera`,
+            stream: voice.localStream,
+            isScreenShare: false,
+            isLocal: true,
+          };
+        }
+      }
+      const remoteFocused = remoteStageSpeakers.find((p) => p.userId === focusedUserId);
+      const remoteFocusedStream = voice.remoteStreams.find((s) => s.userId === focusedUserId);
+      if (
+        remoteFocused &&
+        remoteFocusedStream?.stream.getVideoTracks().some((t) => t.enabled && t.readyState === 'live' && !t.muted)
+      ) {
+        return {
+          key: `remote-${remoteFocused.userId}`,
+          title: `${remoteFocused.profile.displayName}${remoteFocused.screenSharing ? ' · Ekran Yayını' : ' · Kamera'}`,
+          stream: remoteFocusedStream.stream,
+          isScreenShare: remoteFocused.screenSharing,
+          isLocal: false,
+        };
+      }
+    }
+
+    if (spotlightDismissed) return null;
+
+    if (voice.screenSharing && voice.localScreenStream) {
+      return {
+        key: `auto-local-screen`,
+        title: `${me?.displayName || 'Siz'} · Canlı Ekran Yayını`,
+        stream: voice.localScreenStream,
+        isScreenShare: true,
+        isLocal: true,
+      };
+    }
+
+    const remoteSharer = remoteStageSpeakers.find((p) => {
+      if (!p.screenSharing) return false;
+      const si = voice.remoteStreams.find((s) => s.userId === p.userId);
+      return Boolean(si?.stream.getVideoTracks().some((t) => t.enabled && t.readyState === 'live' && !t.muted));
+    });
+    if (remoteSharer) {
+      const si = voice.remoteStreams.find((s) => s.userId === remoteSharer.userId);
+      if (si) {
+        return {
+          key: `auto-remote-screen-${remoteSharer.userId}`,
+          title: `${remoteSharer.profile.displayName} · Canlı Ekran Yayını`,
+          stream: si.stream,
+          isScreenShare: true,
+          isLocal: false,
+        };
+      }
+    }
+    return null;
+  }, [
+    isJoinedThisRoom,
+    focusedUserId,
+    spotlightDismissed,
+    me,
+    voice.screenSharing,
+    voice.localScreenStream,
+    voice.videoEnabled,
+    voice.localStream,
+    voice.remoteStreams,
+    remoteStageSpeakers,
+  ]);
+
+  useEffect(() => {
+    if (spotlightVideoRef.current && activeBroadcast?.stream) {
+      spotlightVideoRef.current.srcObject = activeBroadcast.stream;
+    }
+  }, [activeBroadcast]);
+
+  const handleToggleFullscreenSpotlight = () => {
+    const el = spotlightContainerRef.current;
+    if (!el) return;
+    if (document.fullscreenElement) {
+      void document.exitFullscreen().catch(() => {});
+    } else {
+      void el.requestFullscreen?.().catch(() => {});
+    }
+  };
+
   return (
     <div
       className="relative flex flex-col h-full bg-[#0B0B12] text-[#F8FAFC] p-4 sm:p-6 overflow-hidden"
@@ -500,6 +614,7 @@ export function VoiceStageView({
             <div className="inline-flex rounded-xl bg-[#151522] border border-[#29293D] p-0.5">
               {[
                 { id: 'participants', label: 'Katılımcılar', icon: Users },
+                { id: 'games', label: 'Oyun Salonu', icon: Gamepad2 },
                 { id: 'whiteboard', label: 'Çizim Tahtası', icon: PenTool },
                 { id: 'pomodoro', label: 'Pomodoro', icon: Timer },
               ].map((t) => {
@@ -509,7 +624,7 @@ export function VoiceStageView({
                     key={t.id}
                     type="button"
                     onClick={() => setStageTab(t.id as typeof stageTab)}
-                    className={`h-8 px-2.5 rounded-lg text-xs font-medium inline-flex items-center gap-1.5 transition-colors ${
+                    className={`h-8 px-2.5 rounded-lg text-xs font-medium inline-flex items-center gap-1.5 transition-colors whitespace-nowrap ${
                       stageTab === t.id ? 'bg-[#7C3AED] text-white' : 'text-[#A1A1B5] hover:text-[#F8FAFC]'
                     }`}
                   >
@@ -743,6 +858,8 @@ export function VoiceStageView({
               {voice.joining ? 'Bağlanıyor...' : isStage ? 'Sahneye Dinleyici Olarak Katıl' : 'Sesli Odaya Katıl'}
             </button>
           </div>
+        ) : stageTab === 'games' ? (
+          <VoiceGamesPanel roomId={roomId} />
         ) : stageTab === 'whiteboard' ? (
           <div className="h-full flex flex-col gap-3">
             <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-xl bg-[#151522] border border-[#29293D]">
@@ -879,7 +996,60 @@ export function VoiceStageView({
             </p>
           </div>
         ) : (
-          <div className="space-y-6">
+          <div className="space-y-5">
+            {activeBroadcast && (
+              <motion.div
+                ref={spotlightContainerRef}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.2 }}
+                className="rounded-2xl border border-[#A855F7]/40 bg-black overflow-hidden shadow-2xl"
+              >
+                <div className="px-3.5 py-2.5 bg-[#151522]/95 border-b border-[#29293D] flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-[#EF4444] text-white text-[10px] font-bold tracking-wider uppercase shrink-0">
+                      <Radio className="w-3 h-3" />
+                      CANLI YAYIN
+                    </span>
+                    <span className="text-xs font-semibold text-[#F8FAFC] truncate">{activeBroadcast.title}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={handleToggleFullscreenSpotlight}
+                      title="Tam Ekran"
+                      className="h-8 px-2.5 rounded-lg bg-[#19192A] hover:bg-[#222238] border border-[#29293D] text-xs text-[#F8FAFC] inline-flex items-center gap-1 transition-colors"
+                    >
+                      <Maximize2 className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">Tam Ekran</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFocusedUserId(null);
+                        setSpotlightDismissed(true);
+                      }}
+                      title="Yayını Küçült"
+                      className="h-8 px-2.5 rounded-lg bg-[#19192A] hover:bg-[#222238] border border-[#29293D] text-xs text-[#A1A1B5] hover:text-white inline-flex items-center gap-1 transition-colors"
+                    >
+                      <Minimize2 className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">Küçült</span>
+                    </button>
+                  </div>
+                </div>
+                <div className="relative w-full bg-black flex items-center justify-center">
+                  <video
+                    ref={spotlightVideoRef}
+                    autoPlay
+                    playsInline
+                    muted={activeBroadcast.isLocal}
+                    className={`w-full max-h-[55dvh] object-contain ${
+                      activeBroadcast.isLocal && !activeBroadcast.isScreenShare ? 'scale-x-[-1]' : ''
+                    }`}
+                  />
+                </div>
+              </motion.div>
+            )}
             {isStage && (
               <div className="flex items-center justify-between gap-2 px-1">
                 <p className="text-xs font-bold uppercase tracking-wider text-[#C084FC]">
@@ -1055,110 +1225,189 @@ export function VoiceStageView({
 
       {/* Bottom Controls */}
       {isJoinedThisRoom && (
-        <div className="pt-3.5 border-t border-[#29293D] space-y-2.5 pb-safe">
-          <div className="flex items-center justify-center gap-1.5 flex-wrap">
-            {VOICE_REACTION_EMOJIS.map((em) => (
-              <button
-                key={em}
-                type="button"
-                onClick={() => voice.sendVoiceReaction(em)}
-                title={`Sahneye ${em} tepkisi gönder`}
-                className="h-8 px-2.5 rounded-lg bg-[#151522] hover:bg-[#222238] border border-[#29293D] text-sm transition-transform active:scale-125"
+        <div className="relative pt-3 border-t border-[#29293D] pb-safe">
+          <AnimatePresence>
+            {reactionsOpen && (
+              <motion.div
+                initial={{ opacity: 0, y: 8, scale: 0.96 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 6, scale: 0.96 }}
+                transition={{ duration: 0.14 }}
+                className="mb-3 mx-auto max-w-md rounded-2xl border border-[#29293D] bg-[#151522]/95 backdrop-blur-md p-2.5 shadow-2xl flex items-center justify-between gap-2"
               >
-                {em}
-              </button>
-            ))}
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {VOICE_REACTION_EMOJIS.map((em) => (
+                    <button
+                      key={em}
+                      type="button"
+                      onClick={() => {
+                        voice.sendVoiceReaction(em);
+                        setReactionsOpen(false);
+                      }}
+                      title={`Sahneye ${em} tepkisi gönder`}
+                      className="h-9 w-9 rounded-xl bg-[#19192A] hover:bg-[#222238] border border-[#29293D] text-base flex items-center justify-center transition-transform active:scale-125"
+                    >
+                      {em}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setReactionsOpen(false)}
+                  aria-label="Tepkileri kapat"
+                  className="p-1.5 rounded-lg text-[#A1A1B5] hover:text-white hover:bg-[#222238]"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </motion.div>
+            )}
 
-            <div className="w-px h-5 bg-[#29293D] mx-1 hidden sm:block" />
-
-            {SOUNDBOARD_EFFECTS.map((sb) => (
-              <button
-                key={sb.key}
-                type="button"
-                onClick={() => voice.sendSoundboard(sb.key)}
-                title={`Ses Efekti: ${sb.label}`}
-                className="h-8 px-2.5 rounded-lg bg-[#A855F7]/10 hover:bg-[#A855F7]/20 border border-[#A855F7]/25 text-xs text-[#C084FC] inline-flex items-center gap-1 transition-colors"
+            {soundboardOpen && (
+              <motion.div
+                initial={{ opacity: 0, y: 8, scale: 0.96 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 6, scale: 0.96 }}
+                transition={{ duration: 0.14 }}
+                className="mb-3 mx-auto max-w-xl rounded-2xl border border-[#A855F7]/30 bg-[#151522]/95 backdrop-blur-md p-2.5 shadow-2xl flex items-center justify-between gap-2"
               >
-                <span>{sb.emoji}</span>
-                <span className="hidden md:inline">{sb.label}</span>
-              </button>
-            ))}
-          </div>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {SOUNDBOARD_EFFECTS.map((sb) => (
+                    <button
+                      key={sb.key}
+                      type="button"
+                      onClick={() => {
+                        voice.sendSoundboard(sb.key);
+                        setSoundboardOpen(false);
+                      }}
+                      className="h-9 px-3 rounded-xl bg-[#A855F7]/10 hover:bg-[#A855F7]/20 border border-[#A855F7]/25 text-xs text-[#C084FC] inline-flex items-center gap-1.5 transition-colors"
+                    >
+                      <span>{sb.emoji}</span>
+                      <span>{sb.label}</span>
+                    </button>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSoundboardOpen(false)}
+                  aria-label="Ses efektlerini kapat"
+                  className="p-1.5 rounded-lg text-[#A1A1B5] hover:text-white hover:bg-[#222238] shrink-0"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
-          <div className="flex items-center justify-center gap-2.5 flex-wrap">
+          <div className="flex items-center justify-center gap-2 flex-wrap">
             {isStage && !amIStageSpeaker && (
               <button
                 type="button"
                 onClick={() => voice.raiseHand(!myParticipant?.handRaised)}
-                className={`h-11 px-4 rounded-xl font-medium text-xs flex items-center gap-2 transition-colors ${
+                className={`h-11 px-4 rounded-xl font-medium text-xs flex items-center gap-2 transition-colors whitespace-nowrap ${
                   myParticipant?.handRaised
                     ? 'bg-[#F59E0B] text-white'
                     : 'bg-[#19192A] hover:bg-[#222238] text-[#F59E0B] border border-[#F59E0B]/30'
                 }`}
               >
                 <Hand className="w-4 h-4" />
-                {myParticipant?.handRaised ? 'Eli İndir' : 'Söz İste (El Kaldır)'}
+                {myParticipant?.handRaised ? 'Eli İndir' : 'Söz İste'}
               </button>
             )}
 
             <button
               type="button"
               onClick={() => void voice.toggleMute()}
-              className={`h-11 px-4 rounded-xl font-medium text-xs flex items-center gap-2 transition-colors ${
+              className={`h-11 px-3.5 sm:px-4 rounded-xl font-medium text-xs flex items-center gap-2 transition-colors whitespace-nowrap ${
                 voice.muted
                   ? 'bg-[#EF4444]/20 text-[#EF4444] border border-[#EF4444]/40'
                   : 'bg-[#19192A] hover:bg-[#222238] border border-[#29293D] text-[#F8FAFC]'
               }`}
             >
               {voice.muted ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
-              {voice.pttEnabled
-                ? voice.pttActive
-                  ? 'Konuşuluyor (PTT)'
-                  : `Bas-Konuş (${voice.pttKey})`
-                : voice.muted
-                ? 'Mikrofonu Aç'
-                : 'Sustur'}
+              <span className="hidden sm:inline">
+                {voice.pttEnabled
+                  ? voice.pttActive
+                    ? 'Konuşuluyor (PTT)'
+                    : `Bas-Konuş (${voice.pttKey})`
+                  : voice.muted
+                  ? 'Mikrofonu Aç'
+                  : 'Sustur'}
+              </span>
             </button>
 
             <button
               type="button"
               onClick={() => void voice.toggleDeafen()}
-              className={`h-11 px-4 rounded-xl font-medium text-xs flex items-center gap-2 transition-colors ${
+              className={`h-11 px-3.5 sm:px-4 rounded-xl font-medium text-xs flex items-center gap-2 transition-colors whitespace-nowrap ${
                 voice.deafened
                   ? 'bg-[#EF4444]/20 text-[#EF4444] border border-[#EF4444]/40'
                   : 'bg-[#19192A] hover:bg-[#222238] border border-[#29293D] text-[#F8FAFC]'
               }`}
             >
               {voice.deafened ? <VolumeX className="w-4 h-4" /> : <Headphones className="w-4 h-4" />}
-              {voice.deafened ? 'Sesi Aç' : 'Sağırlaştır'}
+              <span className="hidden sm:inline">{voice.deafened ? 'Sesi Aç' : 'Sağırlaştır'}</span>
             </button>
 
             <button
               type="button"
               onClick={() => void voice.toggleCamera()}
-              className={`h-11 px-4 rounded-xl font-medium text-xs flex items-center gap-2 transition-colors ${
+              className={`h-11 px-3.5 sm:px-4 rounded-xl font-medium text-xs flex items-center gap-2 transition-colors whitespace-nowrap ${
                 voice.videoEnabled ? 'bg-[#7C3AED] hover:bg-[#6D28D9] text-white' : 'bg-[#19192A] hover:bg-[#222238] border border-[#29293D] text-[#F8FAFC]'
               }`}
             >
               {voice.videoEnabled ? <Video className="w-4 h-4" /> : <VideoOff className="w-4 h-4" />}
-              {voice.videoEnabled ? 'Kamerayı Kapat' : 'Kamera'}
+              <span className="hidden sm:inline">{voice.videoEnabled ? 'Kamerayı Kapat' : 'Kamera'}</span>
             </button>
 
             <button
               type="button"
               onClick={() => void voice.toggleScreenShare()}
-              className={`h-11 px-4 rounded-xl font-medium text-xs flex items-center gap-2 transition-colors ${
-                voice.screenSharing ? 'bg-[#7C3AED] hover:bg-[#6D28D9] text-white' : 'bg-[#19192A] hover:bg-[#222238] border border-[#29293D] text-[#F8FAFC]'
+              className={`h-11 px-3.5 sm:px-4 rounded-xl font-medium text-xs flex items-center gap-2 transition-colors whitespace-nowrap ${
+                voice.screenSharing ? 'bg-[#EF4444] hover:bg-[#DC2626] text-white' : 'bg-[#19192A] hover:bg-[#222238] border border-[#29293D] text-[#F8FAFC]'
               }`}
             >
               {voice.screenSharing ? <MonitorOff className="w-4 h-4" /> : <Monitor className="w-4 h-4" />}
-              {voice.screenSharing ? 'Paylaşımı Durdur' : 'Ekran Paylaş'}
+              <span>{voice.screenSharing ? 'Yayını Durdur' : 'Yayın Yap'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setReactionsOpen((prev) => !prev);
+                setSoundboardOpen(false);
+              }}
+              title="Canlı Tepkiler"
+              className={`h-11 px-3 rounded-xl font-medium text-xs flex items-center gap-1.5 transition-colors whitespace-nowrap ${
+                reactionsOpen
+                  ? 'bg-[#7C3AED] text-white'
+                  : 'bg-[#19192A] hover:bg-[#222238] border border-[#29293D] text-[#F8FAFC]'
+              }`}
+            >
+              <SmilePlus className="w-4 h-4" />
+              <span className="hidden md:inline">Tepkiler</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setSoundboardOpen((prev) => !prev);
+                setReactionsOpen(false);
+              }}
+              title="Ses Efektleri"
+              className={`h-11 px-3 rounded-xl font-medium text-xs flex items-center gap-1.5 transition-colors whitespace-nowrap ${
+                soundboardOpen
+                  ? 'bg-[#7C3AED] text-white'
+                  : 'bg-[#19192A] hover:bg-[#222238] border border-[#29293D] text-[#C084FC]'
+              }`}
+            >
+              <Sparkles className="w-4 h-4" />
+              <span className="hidden md:inline">Ses Efektleri</span>
             </button>
 
             <button
               type="button"
               onClick={() => void handleLeave()}
-              className="h-11 px-5 rounded-xl bg-[#EF4444] hover:bg-[#DC2626] text-white font-semibold text-xs flex items-center gap-2 transition-colors"
+              className="h-11 px-4 sm:px-5 rounded-xl bg-[#EF4444] hover:bg-[#DC2626] text-white font-semibold text-xs flex items-center gap-2 transition-colors whitespace-nowrap"
             >
               <PhoneOff className="w-4 h-4" />
               Ayrıl

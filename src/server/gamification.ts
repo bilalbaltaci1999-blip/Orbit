@@ -31,6 +31,8 @@ export function isUserNitroActive(db: Database.Database, userId: string): {
     const expMs = new Date(row.nitro_expires_at).getTime();
     if (Number.isFinite(expMs) && expMs <= Date.now()) {
       db.prepare(`UPDATE profiles SET nitro_tier = 'none', nitro_expires_at = NULL WHERE user_id = ?`).run(userId);
+      db.prepare(`DELETE FROM user_badges WHERE user_id = ? AND badge_key = 'orbit_nitro'`).run(userId);
+      db.prepare(`UPDATE profiles SET featured_badge = NULL WHERE user_id = ? AND featured_badge = 'orbit_nitro'`).run(userId);
       return { isNitro: false, nitroTier: 'none', nitroExpiresAt: null };
     }
   }

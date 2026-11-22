@@ -137,7 +137,41 @@ export interface Role {
   position: number;
   isDefault: boolean;
   isAdmin: boolean;
+  hoist?: boolean;
+  mentionable?: boolean;
+  icon?: string;
+  description?: string;
+  isBoosterRole?: boolean;
+  memberCount?: number;
   permissions: Permission[];
+}
+
+export interface ServerBoostDetails {
+  serverId: string;
+  boostCount: number;
+  boostLevel: number;
+  nextLevelTarget: number | null;
+  myBoosted: boolean;
+  boosters: Array<{
+    userId: string;
+    boostedAt: string;
+    profile: UserProfile;
+  }>;
+  perks: Array<{
+    level: number;
+    requiredBoosts: number;
+    title: string;
+    description: string;
+    unlocked: boolean;
+  }>;
+}
+
+export interface ServerBadgeItem {
+  key: string;
+  label: string;
+  description: string;
+  color: string;
+  rarity: string;
 }
 
 export interface ServerSummary {
@@ -159,6 +193,7 @@ export interface ServerSummary {
   boostLevel?: number;
   myBoosted?: boolean;
   hasOfficialBot?: boolean;
+  serverBadges?: ServerBadgeItem[];
   createdAt: string;
 }
 
@@ -248,6 +283,13 @@ export interface MessageThreadSummary {
   createdAt: string;
 }
 
+export interface MessageReadReceipt {
+  userId: string;
+  displayName: string;
+  avatarUrl: string | null;
+  readAt: string;
+}
+
 export interface ChatMessage {
   id: string;
   channelId?: string;
@@ -275,6 +317,8 @@ export interface ChatMessage {
   attachments: Attachment[];
   reactions: ReactionSummary[];
   poll?: PollData | null;
+  readBy?: MessageReadReceipt[];
+  readCount?: number;
   status?: 'sending' | 'sent' | 'failed';
 }
 

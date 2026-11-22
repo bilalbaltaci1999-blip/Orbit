@@ -1,7 +1,11 @@
 import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
 import { Router } from 'express';
 import type Database from 'better-sqlite3';
 import { z } from 'zod';
+import { getApp, getApps, initializeApp } from 'firebase-admin/app';
+import { getAuth as getFirebaseAdminAuthSdk } from 'firebase-admin/auth';
 import {
   ALL_BADGE_KEYS,
   AVATAR_FRAMES,
@@ -49,6 +53,12 @@ import {
   verifyTotpCode,
   verifyTwoFactorChallengeToken,
 } from '../totp.ts';
+import {
+  isSmtpConfigured,
+  sendAccountVerificationEmail,
+  sendEmailChangeVerification,
+  sendPasswordResetEmail,
+} from '../mailer.ts';
 import { enforceUserUploadLimit, sanitizeFileName, uploadMiddleware } from '../upload.ts';
 import type { OrbitRealtimeHub } from '../ws.ts';
 
@@ -62,6 +72,121 @@ function getAppBaseUrl(req: import('express').Request): string {
     .split(',')[0]
     .trim();
   return `${proto}://${host}`;
+}
+
+function getFirebaseProjectConfig(): { projectId?: string } | null {
+  try {
+    const cfgPath = path.resolve(process.cwd(), 'firebase-applet-config.json');
+    if (!fs.existsSync(cfgPath)) return null;
+    const raw = JSON.parse(fs.readFileSync(cfgPath, 'utf-8')) as { projectId?: string };
+    if (!raw?.projectId || raw.projectId === 'remixed-project-id') return null;
+    return raw;
+  } catch {
+    return null;
+  }
+}
+
+function getFirebaseAdminAuth() {
+  const cfg = getFirebaseProjectConfig();
+  if (!cfg?.projectId) return null;
+  const app = getApps().length > 0 ? getApp() : initializeApp({ projectId: cfg.projectId });
+  return getFirebaseAdminAuthSdk(app);
+}
+
+function upsertGoogleUserAccount(
+  db: Database.Database,
+  googleUser: {
+    sub: string;
+    email: string;
+    emailVerified: boolean;
+    name?: string | null;
+    picture?: string | null;
+  }
+): string | null {
+  const googleSub = googleUser.sub.trim();
+  const emailLower = googleUser.email.trim().toLowerCase();
+  if (!googleSub || !emailLower) return null;
+
+  let targetUserId: string | null = null;
+  const byGoogle = db.prepare(`SELECT id FROM users WHERE google_id = ?`).get(googleSub) as { id: string } | undefined;
+
+  if (byGoogle) {
+    targetUserId = byGoogle.id;
+    db.prepare(`UPDATE users SET email_verified = 1 WHERE id = ?`).run(targetUserId);
+  } else {
+    const byEmail = db
+      .prepare(`SELECT id, password_hash FROM users WHERE lower(email) = ?`)
+      .get(emailLower) as { id: string; password_hash: string } | undefined;
+
+    if (byEmail) {
+      targetUserId = byEmail.id;
+      const nextHash =
+        byEmail.password_hash === FOUNDER_UNCLAIMED_HASH ? GOOGLE_OAUTH_SENTINEL : byEmail.password_hash;
+      const tx = db.transaction(() => {
+        db.prepare(
+          `UPDATE users SET google_id = ?, password_hash = ?, email_verified = 1, verification_token = NULL WHERE id = ?`
+        ).run(googleSub, nextHash, byEmail.id);
+        if (emailLower === FOUNDER_EMAIL) {
+          grantBadge(db, byEmail.id, 'platform_founder');
+          grantBadge(db, byEmail.id, 'orbit_staff');
+          grantBadge(db, byEmail.id, 'orbit_partner');
+          grantBadge(db, byEmail.id, 'orbit_moderator');
+          grantBadge(db, byEmail.id, 'verified_account');
+          grantBadge(db, byEmail.id, 'early_pioneer');
+          grantBadge(db, byEmail.id, 'community_founder');
+          db.prepare(`UPDATE profiles SET discriminator = '0001' WHERE user_id = ?`).run(byEmail.id);
+        } else if (googleUser.emailVerified) {
+          grantBadge(db, byEmail.id, 'verified_account');
+        }
+      });
+      tx();
+    } else {
+      const newUserId = crypto.randomUUID();
+      const isFounderEmail = emailLower === FOUNDER_EMAIL;
+      const discriminator = generateDiscriminator(db, isFounderEmail);
+      const rawHandle = (emailLower.split('@')[0] || 'orbit_user')
+        .replace(/[^a-zA-Z0-9_.-]/g, '')
+        .slice(0, 18);
+      let username = rawHandle.length >= 3 ? rawHandle : `orbit_${crypto.randomInt(1000, 9999)}`;
+      const conflict = db.prepare(`SELECT 1 FROM profiles WHERE username = ?`).get(username);
+      if (conflict) {
+        username = `${username.slice(0, 18)}_${crypto.randomInt(100, 999)}`;
+      }
+      const displayName = (googleUser.name || username).trim().slice(0, 40) || username;
+      const avatarUrl =
+        googleUser.picture && /^https:\/\//i.test(googleUser.picture) ? googleUser.picture : null;
+
+      const tx = db.transaction(() => {
+        db.prepare(
+          `INSERT INTO users (id, email, password_hash, email_verified, google_id)
+           VALUES (?, ?, ?, 1, ?)`
+        ).run(newUserId, emailLower, GOOGLE_OAUTH_SENTINEL, googleSub);
+
+        db.prepare(
+          `INSERT INTO profiles (user_id, username, discriminator, display_name, avatar_url, banner_color)
+           VALUES (?, ?, ?, ?, ?, ?)`
+        ).run(newUserId, username, discriminator, displayName, avatarUrl, isFounderEmail ? '#D97706' : '#4F46E5');
+
+        db.prepare(`INSERT INTO user_settings (user_id) VALUES (?)`).run(newUserId);
+        grantBadge(db, newUserId, 'early_pioneer');
+        if (googleUser.emailVerified) {
+          grantBadge(db, newUserId, 'verified_account');
+        }
+        grantOrbitMemberIfEligible(db, newUserId);
+        if (isFounderEmail) {
+          grantBadge(db, newUserId, 'platform_founder');
+          grantBadge(db, newUserId, 'orbit_staff');
+          grantBadge(db, newUserId, 'orbit_partner');
+          grantBadge(db, newUserId, 'orbit_moderator');
+          grantBadge(db, newUserId, 'verified_account');
+        }
+      });
+      tx();
+      targetUserId = newUserId;
+    }
+  }
+
+  return targetUserId;
 }
 
 function renderGooglePopupHtml(payload: Record<string, unknown>, messageText: string, isError = false): string {
@@ -230,10 +355,67 @@ export function createAuthRoutes(db: Database.Database, hub: OrbitRealtimeHub): 
     });
   });
 
-  // --- GOOGLE OAUTH (POPUP FLOW) ---
+  // --- GOOGLE OAUTH & FIREBASE GOOGLE SIGN-IN ---
   router.get('/auth/google/status', (_req, res) => {
-    const configured = Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
-    res.json({ configured });
+    const oauthConfigured = Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
+    const firebaseEnabled = Boolean(getFirebaseProjectConfig());
+    res.json({
+      configured: oauthConfigured || firebaseEnabled,
+      firebaseEnabled,
+      oauthConfigured,
+      mode: firebaseEnabled ? 'firebase' : oauthConfigured ? 'oauth' : 'none',
+    });
+  });
+
+  router.post('/auth/firebase-google', rateLimit('firebase-google-auth', 20, 60_000), async (req, res) => {
+    const idToken = typeof req.body?.idToken === 'string' ? req.body.idToken.trim() : '';
+    if (!idToken || idToken.length < 20) {
+      res.status(400).json({ error: 'Geçersiz Google kimlik belirteci.' });
+      return;
+    }
+
+    const adminAuth = getFirebaseAdminAuth();
+    if (!adminAuth) {
+      res.status(503).json({ error: 'Firebase Google kimlik doğrulama yapılandırması bulunamadı.' });
+      return;
+    }
+
+    try {
+      const decoded = await adminAuth.verifyIdToken(idToken);
+      const email = String(decoded.email || '').trim().toLowerCase();
+      const uid = String(decoded.uid || '').trim();
+      if (!uid || !email) {
+        res.status(400).json({ error: 'Google hesabınızda e-posta bilgisi bulunamadı.' });
+        return;
+      }
+      if (!decoded.email_verified) {
+        res.status(403).json({ error: 'Güvenlik gereği doğrulanmış bir Google e-posta adresi gereklidir.' });
+        return;
+      }
+
+      const targetUserId = upsertGoogleUserAccount(db, {
+        sub: uid,
+        email,
+        emailVerified: Boolean(decoded.email_verified),
+        name: typeof decoded.name === 'string' ? decoded.name : null,
+        picture: typeof decoded.picture === 'string' ? decoded.picture : null,
+      });
+
+      if (!targetUserId) {
+        res.status(500).json({ error: 'Google hesabı oluşturulamadı.' });
+        return;
+      }
+
+      recordDailyStreak(db, targetUserId);
+      const sessionToken = createSession(db, targetUserId, req.headers['user-agent'] || '');
+      setSessionCookie(res, sessionToken, req);
+
+      const profile = getProfileByUserId(db, targetUserId, hub.isUserOnline, true);
+      const settings = getUserSettings(db, targetUserId);
+      res.json({ token: sessionToken, profile, settings });
+    } catch {
+      res.status(401).json({ error: 'Google kimlik doğrulama belirteci geçersiz veya süresi dolmuş.' });
+    }
   });
 
   router.get('/auth/google/url', rateLimit('google-url', 20, 60_000), (req, res) => {
@@ -578,7 +760,7 @@ export function createAuthRoutes(db: Database.Database, hub: OrbitRealtimeHub): 
     res.json({ token: sessionToken, profile, settings });
   });
 
-  router.post('/auth/register', rateLimit('auth-register', 10, 60_000), (req, res) => {
+  router.post('/auth/register', rateLimit('auth-register', 10, 60_000), async (req, res) => {
     const parsed = registerSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: parsed.error.issues[0]?.message || 'Geçersiz kayıt bilgisi.' });
@@ -623,7 +805,13 @@ export function createAuthRoutes(db: Database.Database, hub: OrbitRealtimeHub): 
         setSessionCookie(res, sessionToken, req);
         const profile = getProfileByUserId(db, existingEmail.id, hub.isUserOnline, true);
         const settings = getUserSettings(db, existingEmail.id);
-        res.status(201).json({ token: sessionToken, profile, settings, verificationToken: null, smtpConfigured: false });
+        res.status(201).json({
+          token: sessionToken,
+          profile,
+          settings,
+          verificationToken: null,
+          smtpConfigured: isSmtpConfigured(),
+        });
         return;
       }
 
@@ -667,6 +855,16 @@ export function createAuthRoutes(db: Database.Database, hub: OrbitRealtimeHub): 
     });
     tx();
 
+    let emailDispatched = false;
+    if (verificationToken && isSmtpConfigured()) {
+      const mailRes = await sendAccountVerificationEmail({
+        to: emailLower,
+        displayName,
+        verifyCode: verificationToken,
+      });
+      emailDispatched = mailRes.sent;
+    }
+
     recordDailyStreak(db, userId);
     const sessionToken = createSession(db, userId, req.headers['user-agent'] || '');
     setSessionCookie(res, sessionToken, req);
@@ -678,8 +876,8 @@ export function createAuthRoutes(db: Database.Database, hub: OrbitRealtimeHub): 
       token: sessionToken,
       profile,
       settings,
-      verificationToken,
-      smtpConfigured: false,
+      verificationToken: emailDispatched ? null : verificationToken,
+      smtpConfigured: isSmtpConfigured(),
     });
   });
 
@@ -1020,7 +1218,7 @@ export function createAuthRoutes(db: Database.Database, hub: OrbitRealtimeHub): 
   });
 
   // --- EMAIL CHANGE ---
-  router.post('/auth/change-email/request', requireAuth, rateLimit('change-email', 5, 60_000), (req: AuthenticatedRequest, res) => {
+  router.post('/auth/change-email/request', requireAuth, rateLimit('change-email', 5, 60_000), async (req: AuthenticatedRequest, res) => {
     const userId = req.userId!;
     const password = String(req.body?.password || '');
     const newEmailRaw = String(req.body?.newEmail || '').trim().toLowerCase();
@@ -1032,8 +1230,13 @@ export function createAuthRoutes(db: Database.Database, hub: OrbitRealtimeHub): 
     }
 
     const user = db
-      .prepare(`SELECT email, password_hash FROM users WHERE id = ?`)
-      .get(userId) as { email: string; password_hash: string } | undefined;
+      .prepare(
+        `SELECT u.email, u.password_hash, p.display_name
+         FROM users u
+         LEFT JOIN profiles p ON p.user_id = u.id
+         WHERE u.id = ?`
+      )
+      .get(userId) as { email: string; password_hash: string; display_name: string | null } | undefined;
     if (!user) {
       res.status(404).json({ error: 'Kullanıcı bulunamadı.' });
       return;
@@ -1063,11 +1266,22 @@ export function createAuthRoutes(db: Database.Database, hub: OrbitRealtimeHub): 
       `UPDATE users SET pending_email = ?, email_change_code = ?, email_change_expires_at = ? WHERE id = ?`
     ).run(newEmailRaw, code, expiresAt, userId);
 
+    const smtpActive = isSmtpConfigured();
+    let emailDispatched = false;
+    if (smtpActive) {
+      const mailResult = await sendEmailChangeVerification({
+        to: newEmailRaw,
+        displayName: user.display_name || 'ORBIT Kullanıcısı',
+        code,
+      });
+      emailDispatched = mailResult.sent;
+    }
+
     res.json({
       ok: true,
       pendingEmail: newEmailRaw,
-      verificationCode: code,
-      smtpConfigured: false,
+      verificationCode: emailDispatched ? null : code,
+      smtpConfigured: emailDispatched,
     });
   });
 
@@ -1099,14 +1313,27 @@ export function createAuthRoutes(db: Database.Database, hub: OrbitRealtimeHub): 
     res.json({ ok: true, profile });
   });
 
-  router.post('/auth/forgot-password', rateLimit('auth-reset', 5, 60_000), (req, res) => {
+  router.post('/auth/forgot-password', rateLimit('auth-reset', 5, 60_000), async (req, res) => {
     const email = String(req.body?.email || '').trim().toLowerCase();
-    if (!email) {
-      res.status(400).json({ error: 'E-posta adresi gerekli.' });
+    if (!email || !z.string().email().safeParse(email).success) {
+      res.status(400).json({ error: 'Geçerli bir e-posta adresi girin.' });
       return;
     }
-    const user = db.prepare(`SELECT id FROM users WHERE email = ?`).get(email) as { id: string } | undefined;
+
+    const user = db
+      .prepare(
+        `SELECT u.id, u.email, p.display_name
+         FROM users u
+         LEFT JOIN profiles p ON p.user_id = u.id
+         WHERE lower(u.email) = ?`
+      )
+      .get(email) as { id: string; email: string; display_name: string | null } | undefined;
+
+    const smtpActive = isSmtpConfigured();
     let resetToken: string | null = null;
+    let resetLink: string | null = null;
+    let emailSent = false;
+
     if (user) {
       resetToken = generateOpaqueToken(16);
       const expiresAt = new Date(Date.now() + 3600 * 1000).toISOString();
@@ -1115,17 +1342,70 @@ export function createAuthRoutes(db: Database.Database, hub: OrbitRealtimeHub): 
         expiresAt,
         user.id
       );
+
+      const baseUrl = getAppBaseUrl(req);
+      resetLink = `${baseUrl}/reset-password?token=${encodeURIComponent(resetToken)}`;
+
+      if (smtpActive) {
+        const mailRes = await sendPasswordResetEmail({
+          to: user.email,
+          displayName: user.display_name || 'ORBIT Kullanıcısı',
+          resetUrl: resetLink,
+          resetCode: resetToken,
+        });
+        if (!mailRes.sent) {
+          res.status(502).json({
+            error: mailRes.error
+              ? `Şifre sıfırlama e-postası gönderilemedi: ${mailRes.error}`
+              : 'Şifre sıfırlama e-postası gönderilemedi. SMTP ayarlarını kontrol edin.',
+          });
+          return;
+        }
+        emailSent = true;
+      }
     }
+
     res.json({
       ok: true,
-      message: 'Hesap mevcutsa şifre sıfırlama kodu oluşturuldu.',
-      resetToken,
-      smtpConfigured: false,
+      message: smtpActive
+        ? 'Bu e-posta adresine kayıtlı bir hesap varsa şifre sıfırlama bağlantısı gönderildi.'
+        : user
+        ? 'SMTP ayarlanmadığı için şifre sıfırlama bağlantısı oluşturuldu.'
+        : 'Hesap mevcutsa şifre sıfırlama bağlantısı oluşturuldu.',
+      emailSent,
+      smtpConfigured: smtpActive,
+      resetToken: smtpActive ? null : resetToken,
+      resetLink: smtpActive ? null : resetLink,
+    });
+  });
+
+  router.get('/auth/reset-password/validate', (req, res) => {
+    const token = String(req.query.token || '').trim();
+    if (!token) {
+      res.status(400).json({ valid: false, error: 'Sıfırlama bağlantısı eksik.' });
+      return;
+    }
+    const row = db
+      .prepare(`SELECT email, reset_expires_at FROM users WHERE reset_token = ?`)
+      .get(token) as { email: string; reset_expires_at: string | null } | undefined;
+
+    if (!row || !row.reset_expires_at || new Date(row.reset_expires_at).getTime() < Date.now()) {
+      res.status(400).json({ valid: false, error: 'Şifre sıfırlama bağlantısı geçersiz veya süresi dolmuş.' });
+      return;
+    }
+
+    const parts = row.email.split('@');
+    const local = parts[0] || '';
+    const maskedLocal = local.length <= 2 ? `${local[0] || '*'}*` : `${local.slice(0, 2)}***${local.slice(-1)}`;
+    res.json({
+      valid: true,
+      emailHint: `${maskedLocal}@${parts[1] || ''}`,
+      expiresAt: row.reset_expires_at,
     });
   });
 
   router.post('/auth/reset-password', (req, res) => {
-    const token = String(req.body?.token || '').trim();
+    const token = String(req.body?.token || req.body?.code || '').trim();
     const newPassword = String(req.body?.newPassword || '');
     if (!token || newPassword.length < 8) {
       res.status(400).json({ error: 'Geçerli kod ve en az 8 karakterlik yeni şifre girin.' });
@@ -1136,7 +1416,7 @@ export function createAuthRoutes(db: Database.Database, hub: OrbitRealtimeHub): 
       .get(token) as { id: string; reset_expires_at: string | null } | undefined;
 
     if (!user || !user.reset_expires_at || new Date(user.reset_expires_at).getTime() < Date.now()) {
-      res.status(400).json({ error: 'Şifre sıfırlama kodu geçersiz veya süresi dolmuş.' });
+      res.status(400).json({ error: 'Şifre sıfırlama bağlantısı/kodu geçersiz veya süresi dolmuş.' });
       return;
     }
     const passwordHash = hashPassword(newPassword);

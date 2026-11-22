@@ -187,7 +187,19 @@ export class WebRtcRoomManager {
     if (!WebRtcRoomManager.isScreenShareSupported()) {
       throw new Error('Bu tarayıcıda (ör. Mobil Safari) ekran paylaşımı desteklenmiyor.');
     }
-    const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getDisplayMedia({
+        video: { frameRate: { ideal: 30 }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+        audio: true,
+      });
+    } catch (err) {
+      const errName = err instanceof DOMException ? err.name : '';
+      if (errName === 'NotAllowedError' || errName === 'AbortError') {
+        throw err;
+      }
+      stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+    }
     this.screenStream = stream;
     const screenTrack = stream.getVideoTracks()[0];
     if (screenTrack) {

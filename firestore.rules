@@ -1,0 +1,240 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Master Gate: Catch-all deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Shared Identity & Structural Helpers
+    function isSignedIn() {
+      return request.auth != null && request.auth.uid != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Entity Validation Blueprints
+    function isValidUserProfileDoc(data) {
+      return data.keys().hasAll([
+          'uid',
+          'email',
+          'displayName',
+          'username',
+          'preferredStatus',
+          'nitroTier',
+          'authProvider',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'uid',
+          'email',
+          'displayName',
+          'username',
+          'photoUrl',
+          'preferredStatus',
+          'customStatus',
+          'nitroTier',
+          'authProvider',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.uid is string
+        && data.uid == request.auth.uid
+        && data.email is string
+        && data.email.size() >= 3
+        && data.email.size() <= 180
+        && data.displayName is string
+        && data.displayName.size() >= 1
+        && data.displayName.size() <= 40
+        && data.username is string
+        && data.username.size() >= 3
+        && data.username.size() <= 30
+        && (!('photoUrl' in data) || (data.photoUrl is string && data.photoUrl.size() <= 500))
+        && data.preferredStatus in ['online', 'idle', 'dnd', 'offline']
+        && (!('customStatus' in data) || (data.customStatus is string && data.customStatus.size() <= 80))
+        && data.nitroTier in ['none', 'nitro']
+        && data.authProvider in ['google', 'email']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidUserPreferencesDoc(data) {
+      return data.keys().hasAll([
+          'uid',
+          'theme',
+          'fontSize',
+          'messageDensity',
+          'inAppNotifications',
+          'soundEnabled',
+          'showOnlineStatus',
+          'dmPermission',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'uid',
+          'theme',
+          'fontSize',
+          'messageDensity',
+          'inAppNotifications',
+          'soundEnabled',
+          'showOnlineStatus',
+          'dmPermission',
+          'updatedAt'
+        ])
+        && data.uid is string
+        && data.uid == request.auth.uid
+        && data.theme in ['dark', 'light', 'system']
+        && data.fontSize in ['sm', 'md', 'lg']
+        && data.messageDensity in ['compact', 'cozy']
+        && data.inAppNotifications is bool
+        && data.soundEnabled is bool
+        && data.showOnlineStatus is bool
+        && data.dmPermission in ['everyone', 'friends', 'server_members']
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidReadCursorDoc(data) {
+      return data.keys().hasAll([
+          'uid',
+          'targetType',
+          'targetId',
+          'lastReadMessageId',
+          'lastReadAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'uid',
+          'targetType',
+          'targetId',
+          'lastReadMessageId',
+          'lastReadAt',
+          'updatedAt'
+        ])
+        && data.uid is string
+        && data.uid == request.auth.uid
+        && data.targetType in ['channel', 'dm']
+        && data.targetId is string
+        && data.targetId.size() >= 1
+        && data.targetId.size() <= 128
+        && data.lastReadMessageId is string
+        && data.lastReadMessageId.size() >= 1
+        && data.lastReadMessageId.size() <= 128
+        && data.lastReadAt is string
+        && data.lastReadAt.size() >= 1
+        && data.lastReadAt.size() <= 64
+        && data.updatedAt is timestamp;
+    }
+
+    // Connection health probe (/test/connection)
+    match /test/{testId} {
+      allow get: if isValidId(testId) && testId == 'connection';
+      allow list, create, update, delete: if false;
+    }
+
+    // PII-Isolated User Documents & Subcollections
+    match /users/{userId} {
+      allow get: if isValidId(userId) && isOwner(userId);
+      allow list: if false;
+      allow create: if isValidId(userId)
+        && isOwner(userId)
+        && isVerifiedUser()
+        && isValidUserProfileDoc(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(userId)
+        && isOwner(userId)
+        && isVerifiedUser()
+        && isValidUserProfileDoc(incoming())
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'email',
+          'displayName',
+          'username',
+          'photoUrl',
+          'preferredStatus',
+          'customStatus',
+          'nitroTier',
+          'authProvider',
+          'updatedAt'
+        ]);
+      allow delete: if isValidId(userId) && isOwner(userId) && isVerifiedUser();
+
+      match /preferences/{prefId} {
+        allow get: if isValidId(userId) && isValidId(prefId) && isOwner(userId);
+        allow list: if isValidId(userId) && isOwner(userId);
+        allow create: if isValidId(userId)
+          && isValidId(prefId)
+          && isOwner(userId)
+          && isVerifiedUser()
+          && isValidUserPreferencesDoc(incoming())
+          && incoming().updatedAt == request.time;
+        allow update: if isValidId(userId)
+          && isValidId(prefId)
+          && isOwner(userId)
+          && isVerifiedUser()
+          && isValidUserPreferencesDoc(incoming())
+          && incoming().uid == existing().uid
+          && incoming().updatedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'theme',
+            'fontSize',
+            'messageDensity',
+            'inAppNotifications',
+            'soundEnabled',
+            'showOnlineStatus',
+            'dmPermission',
+            'updatedAt'
+          ]);
+        allow delete: if isValidId(userId) && isValidId(prefId) && isOwner(userId) && isVerifiedUser();
+      }
+
+      match /readCursors/{cursorId} {
+        allow get: if isValidId(userId) && isValidId(cursorId) && isOwner(userId);
+        allow list: if isValidId(userId) && isOwner(userId);
+        allow create: if isValidId(userId)
+          && isValidId(cursorId)
+          && isOwner(userId)
+          && isVerifiedUser()
+          && isValidReadCursorDoc(incoming())
+          && incoming().updatedAt == request.time;
+        allow update: if isValidId(userId)
+          && isValidId(cursorId)
+          && isOwner(userId)
+          && isVerifiedUser()
+          && isValidReadCursorDoc(incoming())
+          && incoming().uid == existing().uid
+          && incoming().targetType == existing().targetType
+          && incoming().targetId == existing().targetId
+          && incoming().updatedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'lastReadMessageId',
+            'lastReadAt',
+            'updatedAt'
+          ]);
+        allow delete: if isValidId(userId) && isValidId(cursorId) && isOwner(userId) && isVerifiedUser();
+      }
+    }
+  }
+}

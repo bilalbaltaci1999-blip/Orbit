@@ -1,6 +1,10 @@
 export type BadgeKey =
   | 'platform_founder'
   | 'orbit_staff'
+  | 'orbit_nitro'
+  | 'server_booster'
+  | 'bug_hunter_gold'
+  | 'bug_hunter_silver'
   | 'orbit_partner'
   | 'orbit_moderator'
   | 'bot_developer'
@@ -16,6 +20,10 @@ export type BadgeKey =
 export const ALL_BADGE_KEYS: BadgeKey[] = [
   'platform_founder',
   'orbit_staff',
+  'orbit_nitro',
+  'server_booster',
+  'bug_hunter_gold',
+  'bug_hunter_silver',
   'orbit_partner',
   'orbit_moderator',
   'bot_developer',
@@ -28,6 +36,81 @@ export const ALL_BADGE_KEYS: BadgeKey[] = [
   'forum_contributor',
   'voice_pioneer',
 ];
+
+export const CURATED_BADGE_KEYS: BadgeKey[] = [
+  'platform_founder',
+  'orbit_staff',
+  'orbit_nitro',
+  'server_booster',
+  'bug_hunter_gold',
+  'bug_hunter_silver',
+  'orbit_moderator',
+  'bot_developer',
+  'verified_account',
+  'community_founder',
+  'orbit_member',
+];
+
+export type ServerBadgeKey =
+  | 'founder_official'
+  | 'boost_tier_1'
+  | 'boost_tier_2'
+  | 'boost_tier_3'
+  | 'verified_community'
+  | 'orbit_bot_powered';
+
+export interface ServerBadgeMeta {
+  key: ServerBadgeKey;
+  label: string;
+  description: string;
+  color: string;
+  rarity: string;
+}
+
+export const SERVER_BADGE_CATALOG: Record<ServerBadgeKey, ServerBadgeMeta> = {
+  founder_official: {
+    key: 'founder_official',
+    label: 'Resmî ORBIT Sunucusu',
+    description: 'ORBIT platform kurucusuna ait doğrulanmış resmî topluluk.',
+    color: '#6366F1',
+    rarity: 'Eşsiz · Resmî',
+  },
+  boost_tier_3: {
+    key: 'boost_tier_3',
+    label: 'Takviye Seviye 3',
+    description: '10 ve üzeri ORBIT Nitro takviyesi ile maksimum ayrıcalıklara ulaşan sunucu.',
+    color: '#F472B6',
+    rarity: 'Efsanevi · Seviye 3',
+  },
+  boost_tier_2: {
+    key: 'boost_tier_2',
+    label: 'Takviye Seviye 2',
+    description: '5 ve üzeri ORBIT Nitro takviyesine sahip yüksek ses ve medya kaliteli sunucu.',
+    color: '#EC4899',
+    rarity: 'Çok Nadir · Seviye 2',
+  },
+  boost_tier_1: {
+    key: 'boost_tier_1',
+    label: 'Takviyeli Sunucu',
+    description: 'En az 1 ORBIT Nitro takviyesi ile desteklenen topluluk sunucusu.',
+    color: '#A855F7',
+    rarity: 'Nadir · Takviyeli',
+  },
+  verified_community: {
+    key: 'verified_community',
+    label: 'Keşfe Açık Topluluk',
+    description: 'ORBIT Keşfet vitrininde listelenen doğrulanmış topluluk sunucusu.',
+    color: '#22C55E',
+    rarity: 'Seçkin · Topluluk',
+  },
+  orbit_bot_powered: {
+    key: 'orbit_bot_powered',
+    label: 'ORBIT Bot Destekli',
+    description: 'Resmî ORBIT akıllı bot ve otomasyon entegrasyonu etkin sunucu.',
+    color: '#38BDF8',
+    rarity: 'Teknoloji',
+  },
+};
 
 export type AvatarFrameKey =
   | 'none'
@@ -64,17 +147,49 @@ export const BADGE_CATALOG: Record<BadgeKey, Omit<OrbitBadge, 'grantedAt'>> = {
     key: 'platform_founder',
     label: 'ORBIT Kurucusu',
     description: 'ORBIT iletişim platformunun kurucusu ve baş yöneticisi.',
-    color: '#5865F2',
+    color: '#6366F1',
     rarity: 'Eşsiz · Kurucu',
-    simplicity: 'Çok Zor — Yalnızca ORBIT kurucusuna özel tekil rozettir.',
+    simplicity: 'Çok Özel — Yalnızca ORBIT kurucusuna özel tekil rozettir.',
   },
   orbit_staff: {
     key: 'orbit_staff',
-    label: 'Orbit Personeli',
-    description: 'ORBIT platformunun resmi geliştirme ve operasyon ekibi üyesi.',
+    label: 'Orbit Ekibi',
+    description: 'ORBIT platformunun resmî geliştirme, güvenlik ve operasyon ekibi üyesi.',
     color: '#5865F2',
-    rarity: 'Resmi Ekip',
-    simplicity: 'Çok Zor — Yalnızca ORBIT resmi ekibine kurucu tarafından verilir.',
+    rarity: 'Eşsiz · Resmî Ekip',
+    simplicity: 'Çok Özel — Yalnızca ORBIT resmî ekibine kurucu tarafından tanımlanır.',
+  },
+  orbit_nitro: {
+    key: 'orbit_nitro',
+    label: 'ORBIT Nitro',
+    description: 'Aktif ORBIT Nitro abonesi; 50 MB yükleme, HD yayın ve hareketli profil ayrıcalıklarına sahip.',
+    color: '#EC4899',
+    rarity: 'Özel · Nitro Abonesi',
+    simplicity: 'Abonelik — Aktif aylık veya yıllık ORBIT Nitro aboneliği ile kazanılır.',
+  },
+  server_booster: {
+    key: 'server_booster',
+    label: 'Sunucu Takviyecisi',
+    description: 'ORBIT Nitro gücüyle bir topluluk sunucusuna aktif takviye desteği sağlayan üye.',
+    color: '#F472B6',
+    rarity: 'Çok Nadir · Takviye',
+    simplicity: 'Destekçi — ORBIT Nitro ile bir sunucuya takviye yaparak kazanılır.',
+  },
+  bug_hunter_gold: {
+    key: 'bug_hunter_gold',
+    label: 'Hata Avcısı · Altın',
+    description: '5 veya daha fazla kritik hata/güvenlik bildirimiyle ORBIT kalitesini zirveye taşıyan uzman.',
+    color: '#F59E0B',
+    rarity: 'Efsanevi · Altın Avcı',
+    simplicity: 'Zor — 5 farklı geçerli hata veya moderasyon bildirimi yapmak gerekir.',
+  },
+  bug_hunter_silver: {
+    key: 'bug_hunter_silver',
+    label: 'Hata Avcısı · Gümüş',
+    description: 'Platform hatalarını ve topluluk güvenlik ihlallerini raporlayarak ORBIT’i güçlendiren avcı.',
+    color: '#94A3B8',
+    rarity: 'Nadir · Gümüş Avcı',
+    simplicity: 'Orta — Hata veya moderasyon raporu göndererek hemen kazanılır.',
   },
   orbit_partner: {
     key: 'orbit_partner',
@@ -89,15 +204,15 @@ export const BADGE_CATALOG: Record<BadgeKey, Omit<OrbitBadge, 'grantedAt'>> = {
     label: 'Orbit Moderatör',
     description: 'Topluluk düzenini ve güvenliğini aktif moderasyon ile koruyan yetkili.',
     color: '#3BA55C',
-    rarity: 'Topluluk Muhafızı',
+    rarity: 'Nadir · Muhafız',
     simplicity: 'Orta — Sunucularda susturma, çıkarma veya yasaklama moderasyonu yapmak gerekir.',
   },
   bot_developer: {
     key: 'bot_developer',
-    label: 'Orbit Bot Geliştiricisi',
+    label: 'Bot Geliştiricisi',
     description: 'Sunucular için Webhook ve otomatik bot entegrasyonu geliştiren üye.',
     color: '#00AFF4',
-    rarity: 'Geliştirici',
+    rarity: 'Nadir · Geliştirici',
     simplicity: 'Basit — Sunucu ayarlarından bir Webhook / Bot entegrasyonu oluşturmak yeterlidir.',
   },
   bug_hunter: {
@@ -105,16 +220,16 @@ export const BADGE_CATALOG: Record<BadgeKey, Omit<OrbitBadge, 'grantedAt'>> = {
     label: 'Hata Avcısı',
     description: 'Platform hatalarını ve güvenlik/moderasyon bildirimlerini raporlayan araştırmacı.',
     color: '#23A55A',
-    rarity: 'Katkıcı',
-    simplicity: 'Basit — Hata veya geri bildirim raporu göndermek yeterlidir.',
+    rarity: 'Nadir · Katkıcı',
+    simplicity: 'Orta — Hata veya geri bildirim raporu göndermek yeterlidir.',
   },
   orbit_member: {
     key: 'orbit_member',
-    label: 'Orbit Üyesi',
+    label: 'Orbit Üyesi · İlk 100',
     description: 'ORBIT platformunu kullanan ilk 100 üyeden biri.',
     color: '#F47FFF',
     rarity: 'Sınırlı · İlk 100',
-    simplicity: 'Kolay (Sınırlı) — İlk 100 kayıtlı üyeye otomatik tanımlanır.',
+    simplicity: 'Sınırlı Kontenjan — İlk 100 kayıtlı üyeye otomatik tanımlanır.',
     cap: ORBIT_MEMBER_CAP,
   },
   verified_account: {
@@ -122,8 +237,8 @@ export const BADGE_CATALOG: Record<BadgeKey, Omit<OrbitBadge, 'grantedAt'>> = {
     label: 'Doğrulanmış Hesap',
     description: 'E-posta adresini doğrulamış güvenilir üye.',
     color: '#23A55A',
-    rarity: 'Yaygın',
-    simplicity: 'Çok Basit — E-posta doğrulamasını tamamlamak yeterlidir.',
+    rarity: 'Standart · Güvenilir',
+    simplicity: 'Basit — E-posta doğrulamasını tamamlamak yeterlidir.',
   },
   early_pioneer: {
     key: 'early_pioneer',
@@ -131,14 +246,14 @@ export const BADGE_CATALOG: Record<BadgeKey, Omit<OrbitBadge, 'grantedAt'>> = {
     description: 'ORBIT platformunun ilk dönem topluluk üyelerinden biri.',
     color: '#80848E',
     rarity: 'Erken Dönem',
-    simplicity: 'Çok Basit — İlk dönem kayıt olan hesaplara anında verilir.',
+    simplicity: 'İlk dönem kayıt olan hesaplara verilir.',
   },
   community_founder: {
     key: 'community_founder',
     label: 'Topluluk Kurucusu',
     description: 'ORBIT üzerinde en az bir sunucu kurdu ve yönetiyor.',
     color: '#F0B232',
-    rarity: 'Nadir',
+    rarity: 'Nadir · Kurucu',
     simplicity: 'Basit — Sol menüden yeni bir sunucu oluşturmak yeterlidir.',
   },
   active_communicator: {
@@ -147,7 +262,7 @@ export const BADGE_CATALOG: Record<BadgeKey, Omit<OrbitBadge, 'grantedAt'>> = {
     description: 'Kanallarda aktif mesajlaşmaya katıldı.',
     color: '#38BDF8',
     rarity: 'Yaygın',
-    simplicity: 'Çok Basit — Herhangi bir kanalda 3 mesaj göndermek yeterlidir.',
+    simplicity: 'Basit — Herhangi bir kanalda 3 mesaj göndermek yeterlidir.',
   },
   forum_contributor: {
     key: 'forum_contributor',
@@ -155,7 +270,7 @@ export const BADGE_CATALOG: Record<BadgeKey, Omit<OrbitBadge, 'grantedAt'>> = {
     description: 'Topluluk forumlarında konu veya yanıt paylaştı.',
     color: '#A78BFA',
     rarity: 'Orta',
-    simplicity: 'Basit — Bir forum kanalında konu açmak veya yanıt yazmak gerekir.',
+    simplicity: 'Basit — Bir forum kanalında konu açmak gerekir.',
   },
   voice_pioneer: {
     key: 'voice_pioneer',
@@ -163,7 +278,7 @@ export const BADGE_CATALOG: Record<BadgeKey, Omit<OrbitBadge, 'grantedAt'>> = {
     description: 'WebRTC sesli veya görüntülü odalara katıldı.',
     color: '#2DC770',
     rarity: 'Orta',
-    simplicity: 'Çok Basit — Bir sesli odaya ilk kez katılmak yeterlidir.',
+    simplicity: 'Basit — Bir sesli odaya ilk kez katılmak yeterlidir.',
   },
 };
 

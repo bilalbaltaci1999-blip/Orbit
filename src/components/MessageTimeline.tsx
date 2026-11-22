@@ -4,6 +4,7 @@ import {
   BarChart3,
   Bell,
   Check,
+  CheckCheck,
   Clock,
   Copy,
   CornerUpLeft,
@@ -24,6 +25,7 @@ import {
   Pin,
   Play,
   Plus,
+  Rocket,
   RotateCcw,
   Search,
   Send,
@@ -36,16 +38,26 @@ import {
 } from 'lucide-react';
 import { apiFetch, ApiError, resolveMediaUrl, uploadFilesWithProgress } from '../client/api.ts';
 import { useAuth } from '../client/AuthContext.tsx';
+import { syncReadCursorToFirestore } from '../client/firebase.ts';
 import { useToast } from '../client/ToastContext.tsx';
 import { wsClient } from '../client/wsClient.ts';
 import type { ActivityTypeKey, AvatarFrameKey, BadgeKey, OrbitBadge } from '../shared/badges.ts';
 import { SLASH_COMMANDS } from '../shared/templates.ts';
-import type { ChatMessage, PollData, ServerEmoji, UserProfile } from '../shared/types.ts';
+import type { ChatMessage, MessageReadReceipt, PollData, Role, ServerEmoji, UserProfile } from '../shared/types.ts';
 import { FeaturedBadgeIcon } from './BadgeStrip.tsx';
 import { BotBadge, NitroBadge } from './BotBadge.tsx';
 import { UserAvatar } from './UserAvatar.tsx';
 
 const QUICK_EMOJIS = ['👍', '❤️', '🔥', '😂', '🎉', '👀', '🚀', '✅', '👏', '😮', '🤔', '💯', '🙏', '⚡', '💜', '💎'];
+
+const MESSAGE_REPORT_CATEGORIES: Array<{ id: string; label: string }> = [
+  { id: 'Spam / Reklam', label: 'Spam veya İstenmeyen Reklam' },
+  { id: 'Taciz / Zorbalık', label: 'Taciz, Hakaret veya Zorbalık' },
+  { id: 'Nefret Söylemi', label: 'Nefret Söylemi veya Ayrımcılık' },
+  { id: 'Uygunsuz İçerik', label: 'Uygunsuz / NSFW İçerik' },
+  { id: 'Dolandırıcılık / Kimlik Avı', label: 'Dolandırıcılık veya Zararlı Bağlantı' },
+  { id: 'Sunucu Kural İhlali', label: 'Topluluk Kuralları İhlali' },
+];
 
 interface UploadedAttachment {
   id: string;
@@ -73,6 +85,7 @@ interface Props {
   canDeleteOthers?: boolean;
   canEditOthers?: boolean;
   mentionCandidates?: UserProfile[];
+  mentionableRoles?: Role[];
   memberRoleColors?: Record<string, string>;
   serverEmojis?: ServerEmoji[];
   serverOwnerId?: string;
@@ -293,11 +306,19 @@ function VoiceNotePlayer({ url, fileName }: { url: string; fileName: string }) {
 function renderInlineTokens(
   segment: string,
   mentionMap: Map<string, UserProfile>,
+  roleMentionMap: Map<string, Role>,
   emojiMap: Map<string, ServerEmoji>,
   onOpenProfile: (userId: string) => void,
   keyPrefix: string
 ): React.ReactNode[] {
-  const tokenRegex = /(\*\*[^*]+\*\*|\*[^*\n]+\*|`[^`\n]+`|@[a-zA-Z0-9_.-]{2,32}|:[a-z0-9_]{2,24}:|https?:\/\/[^\s<>"']+)/g;
+  const escapedRoleNames = Array.from(roleMentionMap.keys())
+    .sort((a, b) => b.length - a.length)
+    .map((n) => `@${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`);
+  const roleBranch = escapedRoleNames.length > 0 ? `${escapedRoleNames.join('|')}|` : '';
+  const tokenRegex = new RegExp(
+    `(\\*\\*[^*]+\\*\\*|\\*[^*\\n]+\\*|\`[^\`\\n]+\`|${roleBranch}@[a-zA-Z0-9_.-]{2,32}|:[a-z0-9_]{2,24}:|https?:\\/\\/[^\\s<>"']+)`,
+    'gi'
+  );
   const parts: React.ReactNode[] = [];
   let lastIdx = 0;
   let match: RegExpExecArray | null;
@@ -348,9 +369,25 @@ function renderInlineTokens(
         parts.push(token);
       }
     } else if (token.startsWith('@')) {
-      const uname = token.slice(1).toLowerCase();
-      const user = mentionMap.get(uname);
-      if (user) {
+      const targetKey = token.slice(1).toLowerCase();
+      const matchedRole = roleMentionMap.get(targetKey);
+      const user = mentionMap.get(targetKey);
+      if (matchedRole) {
+        parts.push(
+          <span
+            key={key}
+            style={{
+              backgroundColor: `${matchedRole.color || '#7C3AED'}22`,
+              color: matchedRole.color || '#C084FC',
+              borderColor: `${matchedRole.color || '#7C3AED'}44`,
+            }}
+            className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded-md border font-semibold text-[13px]"
+          >
+            {matchedRole.icon && <span>{matchedRole.icon}</span>}
+            <span>@{matchedRole.name}</span>
+          </span>
+        );
+      } else if (user) {
         parts.push(
           <button
             key={key}
@@ -396,6 +433,7 @@ function renderInlineTokens(
 function FormattedMessageContent({
   content,
   mentionMap,
+  roleMentionMap,
   emojiMap,
   onOpenProfile,
   edited,
@@ -403,6 +441,7 @@ function FormattedMessageContent({
 }: {
   content: string;
   mentionMap: Map<string, UserProfile>;
+  roleMentionMap: Map<string, Role>;
   emojiMap: Map<string, ServerEmoji>;
   onOpenProfile: (userId: string) => void;
   edited: boolean;
@@ -431,7 +470,7 @@ function FormattedMessageContent({
           <CodeBlockCard key={i} lang={b.lang || ''} code={b.value} />
         ) : (
           <span key={i} className="whitespace-pre-wrap">
-            {renderInlineTokens(b.value, mentionMap, emojiMap, onOpenProfile, `seg-${i}`)}
+            {renderInlineTokens(b.value, mentionMap, roleMentionMap, emojiMap, onOpenProfile, `seg-${i}`)}
           </span>
         )
       )}
@@ -508,6 +547,7 @@ export function MessageTimeline({
   canDeleteOthers = false,
   canEditOthers = false,
   mentionCandidates = [],
+  mentionableRoles = [],
   memberRoleColors = {},
   serverEmojis = [],
   serverOwnerId,
@@ -567,11 +607,20 @@ export function MessageTimeline({
   const [aiSummary, setAiSummary] = useState<{ summary: string; messageCount: number; model: string } | null>(null);
   const [aiSummarizing, setAiSummarizing] = useState(false);
 
+  const [reportTargetMsg, setReportTargetMsg] = useState<ChatMessage | null>(null);
+  const [reportCategory, setReportCategory] = useState<string>(MESSAGE_REPORT_CATEGORIES[0].id);
+  const [reportReasonText, setReportReasonText] = useState('');
+  const [reportSubmitting, setReportSubmitting] = useState(false);
+
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const typingTimerRef = useRef<number | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const seenAckedRef = useRef<Set<string>>(new Set());
+  const pendingReadIdsRef = useRef<Set<string>>(new Set());
+  const flushReadTimerRef = useRef<number | null>(null);
+  const latestVisibleMsgRef = useRef<{ id: string; createdAt: string } | null>(null);
 
   const roomName = `${mode}:${targetId}`;
   const messagesEndpoint = mode === 'channel' ? `/channels/${targetId}/messages` : `/dm/conversations/${targetId}/messages`;
@@ -618,6 +667,13 @@ export function MessageTimeline({
     setPollErrors({});
     setShowScrollBottom(false);
     setDragOver(false);
+    seenAckedRef.current.clear();
+    pendingReadIdsRef.current.clear();
+    latestVisibleMsgRef.current = null;
+    if (flushReadTimerRef.current) {
+      window.clearTimeout(flushReadTimerRef.current);
+      flushReadTimerRef.current = null;
+    }
   }, [mode, targetId]);
 
   const loadInitialMessages = useCallback(async () => {
@@ -627,9 +683,11 @@ export function MessageTimeline({
       const res = await apiFetch<{ messages: ChatMessage[]; hasMore: boolean }>(`${messagesEndpoint}?limit=40`);
       setMessages(res.messages);
       setHasMore(res.hasMore);
-      await apiFetch(mode === 'channel' ? `/channels/${targetId}/read` : `/dm/conversations/${targetId}/read`, {
-        method: 'POST',
-      }).catch(() => {});
+      if (res.messages.length === 0 || typeof IntersectionObserver === 'undefined') {
+        await apiFetch(mode === 'channel' ? `/channels/${targetId}/read` : `/dm/conversations/${targetId}/read`, {
+          method: 'POST',
+        }).catch(() => {});
+      }
       window.setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'auto' }), 40);
     } catch (err) {
       showToast(err instanceof ApiError ? err.message : 'Mesajlar yüklenemedi.', 'error');
@@ -673,9 +731,24 @@ export function MessageTimeline({
           return [...prev, incoming];
         });
         window.setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 30);
-        void apiFetch(mode === 'channel' ? `/channels/${targetId}/read` : `/dm/conversations/${targetId}/read`, {
-          method: 'POST',
-        }).catch(() => {});
+      } else if (ev.type === 'message:read_receipt' || ev.type === 'dm:read_receipt') {
+        const readIds = new Set(Array.isArray(p.messageIds) ? (p.messageIds as string[]) : []);
+        const reader = p.reader as MessageReadReceipt | undefined;
+        if (readIds.size > 0 && reader?.userId) {
+          setMessages((prev) =>
+            prev.map((m) => {
+              if (!readIds.has(m.id)) return m;
+              if (m.authorId === reader.userId) return m;
+              const existing = (m.readBy || []).filter((r) => r.userId !== reader.userId);
+              const nextReadBy = [reader, ...existing];
+              return {
+                ...m,
+                readBy: nextReadBy,
+                readCount: Math.max(m.readCount || 0, nextReadBy.length),
+              };
+            })
+          );
+        }
       } else if (ev.type === 'message:updated' || ev.type === 'dm:updated') {
         const updated = p.message as ChatMessage;
         setMessages((prev) => prev.map((m) => (m.id === updated.id ? updated : m)));
@@ -727,6 +800,77 @@ export function MessageTimeline({
     });
   }, [mode, targetId, me?.userId]);
 
+  // Granular viewport-based read receipts: mark specific messages read only when viewed on screen
+  useEffect(() => {
+    const root = scrollContainerRef.current;
+    if (!root || !me?.userId || typeof IntersectionObserver === 'undefined') return;
+
+    const flushPendingReads = () => {
+      flushReadTimerRef.current = null;
+      const ids = Array.from(pendingReadIdsRef.current);
+      if (ids.length === 0) return;
+      pendingReadIdsRef.current.clear();
+
+      const endpoint =
+        mode === 'channel'
+          ? `/channels/${targetId}/messages/read`
+          : `/dm/conversations/${targetId}/messages/read`;
+
+      void apiFetch<{ ok: boolean; markedIds: string[] }>(endpoint, {
+        method: 'POST',
+        body: JSON.stringify({ messageIds: ids }),
+      }).catch(() => {});
+
+      if (latestVisibleMsgRef.current) {
+        void syncReadCursorToFirestore(
+          mode,
+          targetId,
+          latestVisibleMsgRef.current.id,
+          latestVisibleMsgRef.current.createdAt
+        ).catch(() => {});
+      }
+    };
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        let added = false;
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          const el = entry.target as HTMLElement;
+          const msgId = el.dataset.messageId;
+          const authorId = el.dataset.authorId;
+          const createdAt = el.dataset.createdAt || '';
+          if (!msgId || msgId.startsWith('temp-')) continue;
+          if (authorId && authorId !== me.userId && !seenAckedRef.current.has(msgId)) {
+            seenAckedRef.current.add(msgId);
+            pendingReadIdsRef.current.add(msgId);
+            added = true;
+            if (!latestVisibleMsgRef.current || createdAt >= latestVisibleMsgRef.current.createdAt) {
+              latestVisibleMsgRef.current = { id: msgId, createdAt };
+            }
+          }
+        }
+        if (added) {
+          if (flushReadTimerRef.current) window.clearTimeout(flushReadTimerRef.current);
+          flushReadTimerRef.current = window.setTimeout(flushPendingReads, 320);
+        }
+      },
+      { root, threshold: 0.45 }
+    );
+
+    const targets = root.querySelectorAll<HTMLElement>('[data-message-id]');
+    targets.forEach((node) => {
+      const msgId = node.dataset.messageId;
+      if (msgId && !seenAckedRef.current.has(msgId)) {
+        observer.observe(node);
+      }
+    });
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [messages, mode, targetId, me?.userId]);
+
   // Fetch link previews for visible messages with URLs
   useEffect(() => {
     for (const m of messages) {
@@ -764,6 +908,16 @@ export function MessageTimeline({
     }
     return map;
   }, [mentionCandidates, messages]);
+
+  const roleMentionMap = useMemo(() => {
+    const map = new Map<string, Role>();
+    for (const r of mentionableRoles) {
+      if (r.mentionable && !r.isDefault && r.name.trim()) {
+        map.set(r.name.toLowerCase(), r);
+      }
+    }
+    return map;
+  }, [mentionableRoles]);
 
   const loadOlderMessages = async () => {
     if (!messages.length || loadingMore) return;
@@ -1253,20 +1407,40 @@ export function MessageTimeline({
     }
   };
 
-  const handleReportMessage = async (msg: ChatMessage) => {
+  const openReportMessage = (msg: ChatMessage) => {
+    setReportTargetMsg(msg);
+    setReportCategory(MESSAGE_REPORT_CATEGORIES[0].id);
+    setReportReasonText('');
+  };
+
+  const submitMessageReport = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reportTargetMsg || reportSubmitting) return;
+    setReportSubmitting(true);
     try {
+      const snippet = reportTargetMsg.content.trim().slice(0, 80);
+      const detail = reportReasonText.trim()
+        ? `${reportReasonText.trim()}${snippet ? ` (Mesaj: "${snippet}")` : ''}`
+        : snippet
+        ? `Bildirilen mesaj: "${snippet}"`
+        : 'Kullanıcı tarafından moderasyona bildirildi.';
       await apiFetch('/reports', {
         method: 'POST',
         body: JSON.stringify({
           targetType: 'message',
-          targetId: msg.id,
+          targetId: reportTargetMsg.id,
           serverId: serverId || null,
-          reason: `Uygunsuz mesaj bildirimi: "${msg.content.slice(0, 80)}"`,
+          category: reportCategory,
+          reason: detail,
         }),
       });
-      showToast('Mesaj moderasyona bildirildi.', 'success');
-    } catch {
-      showToast('Şikâyet gönderilemedi.', 'error');
+      showToast('Şikâyetiniz moderasyon ekibine iletildi.', 'success');
+      setReportTargetMsg(null);
+      setReportReasonText('');
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : 'Şikâyet gönderilemedi.', 'error');
+    } finally {
+      setReportSubmitting(false);
     }
   };
 
@@ -1293,9 +1467,9 @@ export function MessageTimeline({
     }
   }, [pickerTab, gifQuery, loadGifs]);
 
-  // Mention autocomplete
+  // Mention autocomplete (users & mentionable server roles)
   const mentionQuery = useMemo(() => {
-    const match = draft.match(/(?:^|\s)@([a-zA-Z0-9_.-]{1,20})$/);
+    const match = draft.match(/(?:^|\s)@([^\s@]{0,24})$/);
     return match ? match[1].toLowerCase() : null;
   }, [draft]);
 
@@ -1310,8 +1484,15 @@ export function MessageTimeline({
       .slice(0, 5);
   }, [mentionQuery, mentionCandidates]);
 
-  const insertMention = (username: string) => {
-    setDraft((prev) => prev.replace(/@([a-zA-Z0-9_.-]{1,20})$/, `@${username} `));
+  const roleMentionMatches = useMemo(() => {
+    if (mentionQuery === null || mode !== 'channel') return [];
+    return mentionableRoles
+      .filter((r) => r.mentionable && !r.isDefault && r.name.toLowerCase().includes(mentionQuery))
+      .slice(0, 4);
+  }, [mentionQuery, mentionableRoles, mode]);
+
+  const insertMention = (token: string) => {
+    setDraft((prev) => prev.replace(/@([^\s@]{0,24})$/, `@${token} `));
   };
 
   const slashMatches = useMemo(() => {
@@ -1391,18 +1572,18 @@ export function MessageTimeline({
           )}
 
           {filterOpen ? (
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white/95 dark:bg-[#151522]/95 border border-slate-200 dark:border-[#29293D] shadow-lg backdrop-blur-sm">
-              <Search className="w-3.5 h-3.5 text-slate-400 dark:text-[#A1A1B5] shrink-0" />
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white/95 dark:bg-[#151522]/95 border border-cyan-500/40 shadow-lg backdrop-blur-sm">
+              <Search className="w-3.5 h-3.5 text-cyan-500 shrink-0" />
               <input
                 type="text"
                 autoFocus
                 value={filterQuery}
                 onChange={(e) => setFilterQuery(e.target.value)}
-                placeholder="Sohbette filtrele..."
-                className="w-36 sm:w-48 bg-transparent text-xs focus:outline-none text-slate-800 dark:text-[#F8FAFC]"
+                placeholder="Mesaj filtrele..."
+                className="w-32 sm:w-40 bg-transparent text-xs focus:outline-none text-slate-800 dark:text-[#F8FAFC]"
               />
               {filterQuery && (
-                <span className="text-[10px] font-mono text-[#C084FC] tabular-nums">
+                <span className="text-[10px] font-mono text-cyan-500 tabular-nums">
                   {visibleMessages.length}
                 </span>
               )}
@@ -1423,9 +1604,9 @@ export function MessageTimeline({
               type="button"
               onClick={() => setFilterOpen(true)}
               title="Yüklü mesajlarda filtrele"
-              className="h-7 px-2.5 rounded-lg bg-white/80 dark:bg-[#151522]/85 border border-slate-200/80 dark:border-[#29293D] hover:border-[#A855F7]/50 text-[11px] text-slate-500 dark:text-[#A1A1B5] hover:text-[#7C3AED] dark:hover:text-[#C084FC] flex items-center gap-1 backdrop-blur-sm shadow-sm transition-colors"
+              className="h-7 px-2.5 rounded-lg bg-white/85 dark:bg-[#151522]/85 border border-slate-200/80 dark:border-[#29293D] hover:border-cyan-500/50 text-[11px] text-slate-500 dark:text-[#A1A1B5] hover:text-cyan-600 dark:hover:text-cyan-300 flex items-center gap-1 backdrop-blur-sm shadow-sm transition-colors"
             >
-              <Search className="w-3 h-3" />
+              <Search className="w-3 h-3 text-cyan-500" />
               <span className="hidden sm:inline">Filtrele</span>
             </button>
           )}
@@ -1490,22 +1671,24 @@ export function MessageTimeline({
             ))}
           </div>
         ) : visibleMessages.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-center py-16 px-4">
-            <div className="w-12 h-12 rounded-2xl bg-[#7C3AED]/15 border border-[#7C3AED]/30 flex items-center justify-center text-[#C084FC] mb-3 font-display font-bold text-lg">
-              {filterQuery.trim() ? <Search className="w-5 h-5" /> : mode === 'channel' ? '#' : '@'}
+          <div className="h-full flex flex-col items-center justify-center text-center py-12 px-4">
+            <div className="max-w-md w-full p-6 rounded-3xl border border-[#7C3AED]/25 bg-gradient-to-br from-[#7C3AED]/10 via-sky-500/5 to-transparent space-y-2.5">
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#7C3AED] to-cyan-500 text-white flex items-center justify-center mx-auto shadow-md shadow-[#7C3AED]/25 font-display font-bold text-lg">
+                {filterQuery.trim() ? <Search className="w-5 h-5" /> : mode === 'channel' ? '#' : '@'}
+              </div>
+              <h3 className="text-base font-bold font-display">
+                {filterQuery.trim()
+                  ? 'Eşleşen mesaj bulunamadı'
+                  : channelName
+                  ? `#${channelName} kanalına hoş geldiniz`
+                  : 'Sohbet başlangıcı'}
+              </h3>
+              <p className="text-xs text-slate-600 dark:text-[#A1A1B5] leading-relaxed">
+                {filterQuery.trim()
+                  ? 'Farklı bir anahtar kelime deneyin veya filtreyi temizleyin.'
+                  : 'Burada henüz mesaj yok. İlk mesajı gönderin, dosya paylaşın veya /yardim komutunu deneyin.'}
+              </p>
             </div>
-            <h3 className="text-base font-semibold font-display">
-              {filterQuery.trim()
-                ? 'Eşleşen mesaj bulunamadı'
-                : channelName
-                ? `${channelName} başlangıcı`
-                : 'Sohbet başlangıcı'}
-            </h3>
-            <p className="text-sm text-slate-500 dark:text-[#A1A1B5] max-w-sm mt-1">
-              {filterQuery.trim()
-                ? 'Farklı bir anahtar kelime deneyin veya filtreyi temizleyin.'
-                : 'Burada henüz mesaj yok. İlk mesajı göndererek sohbeti başlatın.'}
-            </p>
           </div>
         ) : (
           visibleMessages.map((msg, idx) => {
@@ -1547,6 +1730,9 @@ export function MessageTimeline({
                 )}
 
                 <div
+                  data-message-id={!msg.deletedAt && !msg.id.startsWith('temp-') ? msg.id : undefined}
+                  data-author-id={msg.authorId}
+                  data-created-at={msg.createdAt}
                   className={`group relative rounded-xl px-2.5 transition-colors hover:bg-slate-200/50 dark:hover:bg-white/[0.03] ${
                     grouped ? 'py-0.5' : isCompact ? 'py-1 mt-1' : 'py-1.5 mt-2'
                   } ${msg.isPinned ? 'bg-indigo-500/[0.04]' : ''} ${
@@ -1670,6 +1856,7 @@ export function MessageTimeline({
                             <FormattedMessageContent
                               content={msg.content}
                               mentionMap={mentionLookupMap}
+                              roleMentionMap={roleMentionMap}
                               emojiMap={emojiLookupMap}
                               onOpenProfile={onOpenProfile}
                               edited={Boolean(msg.editedAt)}
@@ -1827,6 +2014,73 @@ export function MessageTimeline({
                               ))}
                             </div>
                           )}
+
+                          {/* Per-Message Read Receipts */}
+                          {!msg.id.startsWith('temp-') && msg.status !== 'sending' && msg.status !== 'failed' && (() => {
+                            const readers = msg.readBy || [];
+                            const readCount = Math.max(msg.readCount || 0, readers.length);
+                            const tooltipText = readers
+                              .slice(0, 8)
+                              .map((r) => `${r.displayName} (${formatTime(r.readAt)})`)
+                              .join(', ');
+                            if (isOwn) {
+                              return (
+                                <div
+                                  className="mt-1 flex items-center gap-1.5 text-[10px] select-none"
+                                  title={readCount > 0 ? `Görenler: ${tooltipText}` : 'İletildi — Henüz görülmedi'}
+                                >
+                                  {readCount > 0 ? (
+                                    <>
+                                      <CheckCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                                      <span className="font-semibold text-emerald-400">Görüldü</span>
+                                      {readers.length > 0 && (
+                                        <span className="inline-flex items-center -space-x-1 ml-0.5">
+                                          {readers.slice(0, 3).map((r) => (
+                                            <span
+                                              key={r.userId}
+                                              className="w-3.5 h-3.5 rounded-full ring-1 ring-[#151522] bg-[#7C3AED]/30 overflow-hidden inline-flex items-center justify-center text-[8px] font-bold text-[#F8FAFC]"
+                                            >
+                                              {r.avatarUrl ? (
+                                                <img
+                                                  src={resolveMediaUrl(r.avatarUrl) || r.avatarUrl}
+                                                  alt={r.displayName}
+                                                  className="w-full h-full object-cover"
+                                                />
+                                              ) : (
+                                                r.displayName[0]?.toUpperCase()
+                                              )}
+                                            </span>
+                                          ))}
+                                        </span>
+                                      )}
+                                      {readCount > 1 && (
+                                        <span className="text-slate-400 dark:text-[#A1A1B5] font-mono tabular-nums">
+                                          · {readCount}
+                                        </span>
+                                      )}
+                                    </>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1 text-slate-400/75 dark:text-[#A1A1B5]/60">
+                                      <Check className="w-3 h-3" />
+                                      <span>İletildi</span>
+                                    </span>
+                                  )}
+                                </div>
+                              );
+                            }
+                            if (readCount > 0) {
+                              return (
+                                <div
+                                  className="mt-1 hidden group-hover:flex items-center gap-1 text-[10px] text-slate-400 dark:text-[#A1A1B5]"
+                                  title={`Görenler: ${tooltipText}`}
+                                >
+                                  <CheckCheck className="w-3 h-3 text-emerald-400/80" />
+                                  <span>{readCount} kişi gördü</span>
+                                </div>
+                              );
+                            }
+                            return null;
+                          })()}
                         </>
                       )}
                     </div>
@@ -1988,7 +2242,7 @@ export function MessageTimeline({
                         <button
                           type="button"
                           onClick={() => {
-                            void handleReportMessage(msg);
+                            openReportMessage(msg);
                             setMobileActiveMsgId(null);
                           }}
                           title="Şikâyet et"
@@ -2209,8 +2463,27 @@ export function MessageTimeline({
         )}
 
         {/* Mention autocomplete popup */}
-        {mentionMatches.length > 0 && (
-          <div className="absolute bottom-full left-4 mb-2 w-64 rounded-xl bg-white dark:bg-[#151522] border border-slate-200 dark:border-[#29293D] shadow-xl overflow-hidden z-30">
+        {(roleMentionMatches.length > 0 || mentionMatches.length > 0) && (
+          <div className="absolute bottom-full left-4 mb-2 w-72 rounded-xl bg-white dark:bg-[#151522] border border-slate-200 dark:border-[#29293D] shadow-xl overflow-hidden z-30">
+            {roleMentionMatches.map((r) => (
+              <button
+                key={`role-${r.id}`}
+                type="button"
+                onClick={() => insertMention(r.name)}
+                className="w-full px-3 py-2 flex items-center gap-2.5 text-left hover:bg-slate-100 dark:hover:bg-[#19192A] text-xs border-b border-slate-100 dark:border-[#29293D]/60 last:border-b-0"
+              >
+                <span
+                  className="w-5 h-5 rounded-md flex items-center justify-center text-[11px] shrink-0"
+                  style={{ backgroundColor: `${r.color}25`, color: r.color }}
+                >
+                  {r.icon || <Rocket className="w-3 h-3" />}
+                </span>
+                <span className="font-semibold truncate" style={{ color: r.color }}>
+                  @{r.name}
+                </span>
+                <span className="text-[10px] text-slate-400 dark:text-[#A1A1B5] ml-auto shrink-0">Rol</span>
+              </button>
+            ))}
             {mentionMatches.map((u) => (
               <button
                 key={u.userId}
@@ -2460,7 +2733,7 @@ export function MessageTimeline({
                     ? `Dosya veya görsel ekle (Maks ${me?.nitroTier === 'nitro' ? '50 MB · Nitro' : '10 MB'})`
                     : 'Dosya ekleme izniniz yok'
                 }
-                className="min-h-[44px] min-w-[44px] rounded-xl bg-white dark:bg-[#19192A] border border-slate-200 dark:border-[#29293D] hover:border-[#A855F7]/50 flex items-center justify-center text-slate-500 dark:text-[#A1A1B5] disabled:opacity-40 shrink-0"
+                className="min-h-[44px] min-w-[44px] rounded-xl bg-white dark:bg-[#19192A] border border-slate-200 dark:border-[#29293D] hover:border-sky-500/50 hover:bg-sky-500/10 flex items-center justify-center text-sky-600 dark:text-sky-400 disabled:opacity-40 shrink-0 transition-colors"
               >
                 <Paperclip className="w-4 h-4" />
               </button>
@@ -2470,7 +2743,7 @@ export function MessageTimeline({
                 disabled={!canSend || !canAttachFiles}
                 onClick={() => void startVoiceNote()}
                 title={canAttachFiles ? 'Sesli Not Kaydet' : 'Ses notu için dosya ekleme izni gerekir'}
-                className="min-h-[44px] min-w-[44px] rounded-xl bg-white dark:bg-[#19192A] border border-slate-200 dark:border-[#29293D] hover:border-[#EF4444]/50 flex items-center justify-center text-slate-500 dark:text-[#A1A1B5] hover:text-[#EF4444] disabled:opacity-40 shrink-0"
+                className="min-h-[44px] min-w-[44px] rounded-xl bg-white dark:bg-[#19192A] border border-slate-200 dark:border-[#29293D] hover:border-rose-500/50 hover:bg-rose-500/10 flex items-center justify-center text-rose-500 dark:text-rose-400 disabled:opacity-40 shrink-0 transition-colors"
               >
                 <Mic className="w-4 h-4" />
               </button>
@@ -2484,10 +2757,10 @@ export function MessageTimeline({
                     setPollErrors({});
                   }}
                   title="Canlı Anket Oluştur"
-                  className={`hidden sm:flex min-h-[44px] min-w-[44px] rounded-xl border items-center justify-center disabled:opacity-40 shrink-0 ${
+                  className={`hidden sm:flex min-h-[44px] min-w-[44px] rounded-xl border items-center justify-center disabled:opacity-40 shrink-0 transition-colors ${
                     pollBuilderOpen
-                      ? 'bg-[#7C3AED] border-[#A855F7] text-white'
-                      : 'bg-white dark:bg-[#19192A] border-slate-200 dark:border-[#29293D] hover:border-[#A855F7]/50 text-slate-500 dark:text-[#A1A1B5]'
+                      ? 'bg-amber-500 border-amber-400 text-slate-950'
+                      : 'bg-white dark:bg-[#19192A] border-slate-200 dark:border-[#29293D] hover:border-amber-500/50 hover:bg-amber-500/10 text-amber-500 dark:text-amber-400'
                   }`}
                 >
                   <BarChart3 className="w-4 h-4" />
@@ -2534,10 +2807,10 @@ export function MessageTimeline({
                 disabled={!canSend}
                 onClick={() => setScheduleOpen(!scheduleOpen)}
                 title="Mesajı Zamanla"
-                className={`min-h-[44px] min-w-[44px] rounded-xl border flex items-center justify-center disabled:opacity-40 shrink-0 ${
+                className={`min-h-[44px] min-w-[44px] rounded-xl border flex items-center justify-center disabled:opacity-40 shrink-0 transition-colors ${
                   scheduleOpen
-                    ? 'bg-[#7C3AED] border-[#A855F7] text-white'
-                    : 'bg-white dark:bg-[#19192A] border-slate-200 dark:border-[#29293D] hover:border-[#A855F7]/50 text-slate-500 dark:text-[#A1A1B5]'
+                    ? 'bg-cyan-500 border-cyan-400 text-white'
+                    : 'bg-white dark:bg-[#19192A] border-slate-200 dark:border-[#29293D] hover:border-cyan-500/50 hover:bg-cyan-500/10 text-cyan-600 dark:text-cyan-400'
                 }`}
               >
                 <Clock className="w-4 h-4" />
@@ -2548,7 +2821,11 @@ export function MessageTimeline({
                 disabled={!canSend}
                 onClick={() => setPickerTab(pickerTab === 'none' ? 'emoji' : 'none')}
                 title="Emoji ve GIF"
-                className="min-h-[44px] min-w-[44px] rounded-xl bg-white dark:bg-[#19192A] border border-slate-200 dark:border-[#29293D] hover:border-[#A855F7]/50 flex items-center justify-center text-slate-500 dark:text-[#A1A1B5] disabled:opacity-40 shrink-0"
+                className={`min-h-[44px] min-w-[44px] rounded-xl border flex items-center justify-center disabled:opacity-40 shrink-0 transition-colors ${
+                  pickerTab !== 'none'
+                    ? 'bg-emerald-500 border-emerald-400 text-white'
+                    : 'bg-white dark:bg-[#19192A] border-slate-200 dark:border-[#29293D] hover:border-emerald-500/50 hover:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                }`}
               >
                 <Smile className="w-4 h-4" />
               </button>
@@ -2557,7 +2834,7 @@ export function MessageTimeline({
                 type="submit"
                 disabled={!canSend}
                 aria-label="Mesaj gönder"
-                className="min-h-[44px] px-4 rounded-xl bg-[#7C3AED] hover:bg-[#6D28D9] disabled:opacity-40 text-white text-sm font-medium flex items-center gap-1.5 transition-colors"
+                className="min-h-[44px] px-4 rounded-xl bg-gradient-to-r from-[#7C3AED] to-[#6366F1] hover:from-[#6D28D9] hover:to-[#4F46E5] disabled:opacity-40 text-white text-sm font-medium flex items-center gap-1.5 shadow-sm shadow-[#7C3AED]/25 transition-all"
               >
                 <Send className="w-4 h-4" />
                 <span className="hidden sm:inline">Gönder</span>
@@ -2566,6 +2843,99 @@ export function MessageTimeline({
           </div>
         )}
       </div>
+
+      {/* Multi-Option Message Report Modal */}
+      {reportTargetMsg && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 backdrop-blur-sm p-4"
+          onClick={() => !reportSubmitting && setReportTargetMsg(null)}
+        >
+          <form
+            onClick={(e) => e.stopPropagation()}
+            onSubmit={submitMessageReport}
+            className="w-full max-w-md rounded-2xl bg-white dark:bg-[#151522] border border-slate-200 dark:border-[#29293D] p-5 space-y-4 shadow-2xl animate-orbit-enter"
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-amber-500/15 text-amber-400 flex items-center justify-center shrink-0">
+                  <Flag className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold font-display">Mesajı Şikâyet Et</h3>
+                  <p className="text-[11px] text-slate-500 dark:text-[#A1A1B5]">
+                    {reportTargetMsg.author.displayName} · İhlal türünü seçin
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                disabled={reportSubmitting}
+                onClick={() => setReportTargetMsg(null)}
+                className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-[#19192A] text-slate-400"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {reportTargetMsg.content && (
+              <div className="p-2.5 rounded-xl bg-slate-100 dark:bg-[#10111B] border border-slate-200 dark:border-[#29293D] text-xs text-slate-600 dark:text-[#A1A1B5] line-clamp-2 italic">
+                &ldquo;{reportTargetMsg.content}&rdquo;
+              </div>
+            )}
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-slate-600 dark:text-[#A1A1B5]">Şikâyet Kategorisi</label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                {MESSAGE_REPORT_CATEGORIES.map((cat) => (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    onClick={() => setReportCategory(cat.id)}
+                    className={`px-3 py-2 rounded-xl border text-left text-xs font-medium transition-colors ${
+                      reportCategory === cat.id
+                        ? 'border-amber-500/70 bg-amber-500/15 text-amber-700 dark:text-amber-300'
+                        : 'border-slate-200 dark:border-[#29293D] bg-slate-50 dark:bg-[#19192A] text-slate-600 dark:text-[#A1A1B5]'
+                    }`}
+                  >
+                    {cat.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-slate-500 dark:text-[#A1A1B5]">Ek Açıklama (İsteğe bağlı)</label>
+              <textarea
+                rows={3}
+                maxLength={320}
+                value={reportReasonText}
+                onChange={(e) => setReportReasonText(e.target.value)}
+                placeholder="Moderasyon ekibi için kısa not ekleyin..."
+                className="w-full p-2.5 rounded-xl bg-slate-100 dark:bg-[#19192A] border border-slate-200 dark:border-[#29293D] text-xs focus:outline-none focus:ring-2 focus:ring-[#A855F7]"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                disabled={reportSubmitting}
+                onClick={() => setReportTargetMsg(null)}
+                className="h-9 px-3.5 rounded-xl border border-slate-200 dark:border-[#29293D] text-xs font-medium"
+              >
+                Vazgeç
+              </button>
+              <button
+                type="submit"
+                disabled={reportSubmitting}
+                className="h-9 px-4 rounded-xl bg-[#F59E0B] hover:bg-amber-600 disabled:opacity-60 text-white text-xs font-semibold flex items-center gap-1.5"
+              >
+                {reportSubmitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                Şikâyeti Gönder
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 }

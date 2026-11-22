@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { Router } from 'express';
 import type Database from 'better-sqlite3';
-import { createAuthMiddleware, getProfileByUserId, rateLimit, type AuthenticatedRequest } from '../auth.ts';
+import { createAuthMiddleware, getProfileByUserId, grantBadge, rateLimit, revokeBadge, type AuthenticatedRequest } from '../auth.ts';
 import {
   generateChannelSummary,
   getOfficialBotConfig,
@@ -15,6 +15,7 @@ import {
   isUserNitroActive,
 } from '../gamification.ts';
 import { canViewChannel, hasServerPermission, isServerMember } from '../permissions.ts';
+import { DEFAULT_MEMBER_PERMISSIONS } from '../../shared/permissions.ts';
 import type { OrbitRealtimeHub } from '../ws.ts';
 
 function getAppBaseUrl(req: import('express').Request): string {
@@ -58,7 +59,7 @@ function grantPaidNitro(
 
     if (opts.stripeSessionId) {
       db.prepare(
-        `INSERT OR IGNORE INTO nitro_payments (id, user_id, stripe_session_id, plan, amount_cents, currency, status)
+        `INSERT OR IGNORE INTO nitro_payments (id, user_id, stripe_session_id, plan, amount_kurus, currency, status)
          VALUES (?, ?, ?, ?, ?, ?, 'paid')`
       ).run(
         crypto.randomUUID(),
@@ -69,6 +70,7 @@ function grantPaidNitro(
         (opts.currency || 'try').toLowerCase()
       );
     }
+    grantBadge(db, userId, 'orbit_nitro');
   });
   tx();
   hub.broadcastPresence(userId);
@@ -86,6 +88,7 @@ function downgradeNitroUser(db: Database.Database, hub: OrbitRealtimeHub, userId
          updated_at = datetime('now')
      WHERE user_id = ?`
   ).run(userId);
+  revokeBadge(db, userId, 'orbit_nitro');
   hub.broadcastPresence(userId);
 }
 
@@ -450,19 +453,57 @@ export function createNitroAndBotRoutes(db: Database.Database, hub: OrbitRealtim
       serverId,
       userId
     );
+
+    // Ensure a Discord-style hoisted 🚀 Roket Takviyecisi role exists & assign it
+    let boosterRole = db
+      .prepare(`SELECT id FROM roles WHERE server_id = ? AND is_booster_role = 1 LIMIT 1`)
+      .get(serverId) as { id: string } | undefined;
+    if (!boosterRole) {
+      const boosterRoleId = crypto.randomUUID();
+      const tx = db.transaction(() => {
+        db.prepare(
+          `INSERT INTO roles (id, server_id, name, color, position, is_default, is_admin, hoist, mentionable, icon, description, is_booster_role)
+           VALUES (?, ?, 'Roket Takviyecisi', '#F472B6', 15, 0, 0, 1, 1, '🚀', 'Bu sunucuya ORBIT Nitro Roketi ile takviye sağlayan özel destekçiler.', 1)`
+        ).run(boosterRoleId, serverId);
+        const permStmt = db.prepare(`INSERT INTO role_permissions (role_id, permission) VALUES (?, ?)`);
+        for (const p of DEFAULT_MEMBER_PERMISSIONS) permStmt.run(boosterRoleId, p);
+      });
+      tx();
+      boosterRole = { id: boosterRoleId };
+    }
+    db.prepare(`INSERT OR IGNORE INTO member_roles (server_id, user_id, role_id) VALUES (?, ?, ?)`).run(
+      serverId,
+      userId,
+      boosterRole.id
+    );
+
     awardActivityXp(db, userId, 'boost');
+    grantBadge(db, userId, 'server_booster');
+    hub.broadcastPresence(userId);
+    hub.sendToRoom(`server:${serverId}`, { type: 'member:updated', payload: { serverId } });
     hub.sendToRoom(`server:${serverId}`, { type: 'server:updated', payload: { serverId } });
     const countRow = db
       .prepare(`SELECT COUNT(*) as cnt FROM server_boosts WHERE server_id = ?`)
       .get(serverId) as { cnt: number };
 
-    res.json({ ok: true, boostCount: countRow.cnt });
+    res.json({ ok: true, boostCount: countRow.cnt, boosterRoleId: boosterRole.id });
   });
 
   router.delete('/nitro/boost/:serverId', requireAuth, (req: AuthenticatedRequest, res) => {
     const userId = req.userId!;
     const serverId = String(req.params.serverId);
     db.prepare(`DELETE FROM server_boosts WHERE server_id = ? AND user_id = ?`).run(serverId, userId);
+    const boosterRoles = db
+      .prepare(`SELECT id FROM roles WHERE server_id = ? AND is_booster_role = 1`)
+      .all(serverId) as { id: string }[];
+    for (const r of boosterRoles) {
+      db.prepare(`DELETE FROM member_roles WHERE server_id = ? AND user_id = ? AND role_id = ?`).run(
+        serverId,
+        userId,
+        r.id
+      );
+    }
+    hub.sendToRoom(`server:${serverId}`, { type: 'member:updated', payload: { serverId } });
     hub.sendToRoom(`server:${serverId}`, { type: 'server:updated', payload: { serverId } });
     const countRow = db
       .prepare(`SELECT COUNT(*) as cnt FROM server_boosts WHERE server_id = ?`)

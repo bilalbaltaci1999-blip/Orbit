@@ -65,8 +65,8 @@ export function OnboardingModal({ serverName, onboarding, onClose, onCompleted }
         className="w-full max-w-lg rounded-2xl bg-white dark:bg-[#151522] border border-slate-200 dark:border-[#29293D] p-5 sm:p-6 space-y-5 shadow-2xl max-h-[88dvh] overflow-y-auto animate-orbit-enter"
       >
         <div className="flex items-start justify-between gap-3">
-          <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-xl bg-[#7C3AED]/20 border border-[#A855F7]/30 flex items-center justify-center text-[#C084FC]">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#7C3AED] to-emerald-500 flex items-center justify-center text-white shadow-md shadow-[#7C3AED]/20">
               <Sparkles className="w-5 h-5" />
             </div>
             <div>
@@ -80,12 +80,12 @@ export function OnboardingModal({ serverName, onboarding, onClose, onCompleted }
         </div>
 
         {onboarding.rulesText && (
-          <div className="rounded-xl border border-slate-200 dark:border-[#29293D] bg-slate-50 dark:bg-[#10111B] p-4 space-y-2">
-            <p className="text-xs font-bold uppercase tracking-wider text-[#C084FC] flex items-center gap-1.5">
+          <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/[0.06] dark:bg-emerald-500/[0.08] p-4 space-y-2">
+            <p className="text-xs font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
               <ShieldCheck className="w-3.5 h-3.5" />
               Topluluk Kuralları
             </p>
-            <p className="text-xs text-slate-600 dark:text-[#F8FAFC] whitespace-pre-wrap leading-relaxed">
+            <p className="text-xs text-slate-700 dark:text-[#F8FAFC] whitespace-pre-wrap leading-relaxed">
               {onboarding.rulesText}
             </p>
           </div>

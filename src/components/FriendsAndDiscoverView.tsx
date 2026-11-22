@@ -125,7 +125,9 @@ export function FriendsView({
             type="button"
             onClick={() => setTab('online')}
             className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${
-              tab === 'online' ? 'bg-[#7C3AED] text-white' : 'text-slate-600 dark:text-[#A1A1B5] hover:bg-slate-200/60 dark:hover:bg-[#19192A]'
+              tab === 'online'
+                ? 'bg-emerald-600 text-white shadow-sm'
+                : 'text-slate-600 dark:text-[#A1A1B5] hover:bg-emerald-500/10 hover:text-emerald-600 dark:hover:text-emerald-400'
             }`}
           >
             Çevrimiçi ({onlineFriends.length})
@@ -134,7 +136,9 @@ export function FriendsView({
             type="button"
             onClick={() => setTab('all')}
             className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${
-              tab === 'all' ? 'bg-[#7C3AED] text-white' : 'text-slate-600 dark:text-[#A1A1B5] hover:bg-slate-200/60 dark:hover:bg-[#19192A]'
+              tab === 'all'
+                ? 'bg-[#7C3AED] text-white shadow-sm'
+                : 'text-slate-600 dark:text-[#A1A1B5] hover:bg-[#7C3AED]/10 hover:text-[#7C3AED] dark:hover:text-[#C084FC]'
             }`}
           >
             Tümü ({accepted.length})
@@ -143,7 +147,9 @@ export function FriendsView({
             type="button"
             onClick={() => setTab('pending')}
             className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${
-              tab === 'pending' ? 'bg-[#7C3AED] text-white' : 'text-slate-600 dark:text-[#A1A1B5] hover:bg-slate-200/60 dark:hover:bg-[#19192A]'
+              tab === 'pending'
+                ? 'bg-amber-500 text-slate-950 shadow-sm'
+                : 'text-slate-600 dark:text-[#A1A1B5] hover:bg-amber-500/10 hover:text-amber-600 dark:hover:text-amber-400'
             }`}
           >
             Bekleyenler ({pending.length})
@@ -152,7 +158,9 @@ export function FriendsView({
             type="button"
             onClick={() => setTab('blocked')}
             className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${
-              tab === 'blocked' ? 'bg-[#7C3AED] text-white' : 'text-slate-600 dark:text-[#A1A1B5] hover:bg-slate-200/60 dark:hover:bg-[#19192A]'
+              tab === 'blocked'
+                ? 'bg-rose-600 text-white shadow-sm'
+                : 'text-slate-600 dark:text-[#A1A1B5] hover:bg-rose-500/10 hover:text-rose-500'
             }`}
           >
             Engellenenler ({blocked.length})
@@ -161,7 +169,9 @@ export function FriendsView({
             type="button"
             onClick={() => setTab('add')}
             className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors ${
-              tab === 'add' ? 'bg-[#22C55E] text-slate-950' : 'bg-[#22C55E]/15 text-emerald-600 dark:text-[#22C55E] hover:bg-[#22C55E]/25'
+              tab === 'add'
+                ? 'bg-[#22C55E] text-slate-950 shadow-sm'
+                : 'bg-[#22C55E]/15 text-emerald-600 dark:text-[#22C55E] hover:bg-[#22C55E]/25'
             }`}
           >
             Arkadaş Ekle
@@ -174,9 +184,9 @@ export function FriendsView({
             setGroupError('');
             setGroupModalOpen(true);
           }}
-          className="h-8 px-3 rounded-lg border border-slate-200 dark:border-[#29293D] dark:bg-[#19192A] text-xs font-medium flex items-center gap-1.5 whitespace-nowrap hover:border-[#A855F7]/60"
+          className="h-8 px-3 rounded-lg border border-sky-500/30 bg-sky-500/10 text-sky-600 dark:text-sky-300 text-xs font-semibold flex items-center gap-1.5 whitespace-nowrap hover:bg-sky-500/20 transition-colors"
         >
-          <Users className="w-3.5 h-3.5 text-[#C084FC]" />
+          <Users className="w-3.5 h-3.5" />
           Grup DM
         </button>
       </div>
@@ -283,8 +293,14 @@ export function FriendsView({
         {(tab === 'all' || tab === 'online') && (
           <div className="space-y-2 max-w-3xl">
             {visibleList.length === 0 ? (
-              <div className="py-16 text-center text-sm text-slate-400">
-                {tab === 'online' ? 'Şu anda çevrimiçi arkadaşınız yok.' : 'Henüz arkadaş listeniz boş.'}
+              <div className="py-12 px-6 rounded-2xl border border-slate-200 dark:border-[#29293D] bg-gradient-to-br from-[#7C3AED]/8 via-cyan-500/5 to-transparent text-center space-y-2">
+                <Users className="w-7 h-7 text-[#A855F7] mx-auto opacity-85" />
+                <p className="text-sm font-semibold text-slate-700 dark:text-[#F8FAFC]">
+                  {tab === 'online' ? 'Şu anda çevrimiçi arkadaşınız yok.' : 'Henüz arkadaş listeniz boş.'}
+                </p>
+                <p className="text-xs text-slate-500 dark:text-[#A1A1B5]">
+                  Arkadaş Ekle sekmesinden kullanıcı adı ve etiketle yeni arkadaşlar ekleyebilirsiniz.
+                </p>
               </div>
             ) : (
               visibleList.map((item) => (

@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { motion } from 'motion/react';
 import {
   Archive,
   Award,
@@ -12,8 +13,10 @@ import {
   Flame,
   Hash,
   Headphones,
+  FolderKanban,
   Home,
   Link2,
+  Lock,
   LogOut,
   Megaphone,
   Menu,
@@ -27,6 +30,7 @@ import {
   Pin,
   Plus,
   Radio,
+  Rocket,
   Search,
   Settings,
   ShieldCheck,
@@ -47,7 +51,7 @@ import { useToast } from '../client/ToastContext.tsx';
 import { formatIsoElapsed, formatVoiceDuration, useVoice } from '../client/VoiceContext.tsx';
 import { playNotificationSound } from '../client/soundEffects.ts';
 import { wsClient, type WsConnectionState } from '../client/wsClient.ts';
-import type { ActivityTypeKey, AvatarFrameKey, BadgeKey, OrbitBadge, ProfileEffectKey } from '../shared/badges.ts';
+import type { ActivityTypeKey, AvatarFrameKey, BadgeKey, BannerPresetKey, OrbitBadge, ProfileEffectKey } from '../shared/badges.ts';
 import type { Permission } from '../shared/permissions.ts';
 import { SERVER_TEMPLATES, type ServerTemplateId } from '../shared/templates.ts';
 import type {
@@ -81,7 +85,7 @@ import { OnboardingModal } from './OnboardingModal.tsx';
 import { OrbitLogo } from './OrbitLogo.tsx';
 import { OfflineIndicator, PWAInstallButton } from './PWAInstallBanner.tsx';
 import { SearchModal } from './SearchModal.tsx';
-import { ServerSettingsModal } from './ServerSettingsModal.tsx';
+import { ServerSettingsModal, type ServerSettingsTabId } from './ServerSettingsModal.tsx';
 import { SettingsModal } from './SettingsModal.tsx';
 import { ThreadDrawer } from './ThreadDrawer.tsx';
 import { getStatusLabel, UserAvatar } from './UserAvatar.tsx';
@@ -140,12 +144,18 @@ export function OrbitWorkspace({ viewMode }: { viewMode: 'home' | 'server' | 'di
 
   const [quickChannelOpen, setQuickChannelOpen] = useState(false);
   const [quickChannelName, setQuickChannelName] = useState('');
-  const [quickChannelType, setQuickChannelType] = useState<'text' | 'voice' | 'announcement' | 'forum'>('text');
+  const [quickChannelTopic, setQuickChannelTopic] = useState('');
+  const [quickChannelType, setQuickChannelType] = useState<'category' | 'text' | 'voice' | 'announcement' | 'forum'>('text');
+  const [quickChannelParentId, setQuickChannelParentId] = useState('');
+  const [quickChannelIsStage, setQuickChannelIsStage] = useState(false);
+  const [quickChannelIsPrivate, setQuickChannelIsPrivate] = useState(false);
+  const [quickChannelRoleIds, setQuickChannelRoleIds] = useState<string[]>([]);
   const [quickChannelError, setQuickChannelError] = useState('');
 
   const [mobileNotifSheetOpen, setMobileNotifSheetOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [serverSettingsOpen, setServerSettingsOpen] = useState(false);
+  const [serverSettingsInitialTab, setServerSettingsInitialTab] = useState<ServerSettingsTabId | undefined>(undefined);
   const [searchOpen, setSearchOpen] = useState(false);
   const [badgeCatalogOpen, setBadgeCatalogOpen] = useState(false);
   const [achievementsModalOpen, setAchievementsModalOpen] = useState(false);
@@ -203,6 +213,42 @@ export function OrbitWorkspace({ viewMode }: { viewMode: 'home' | 'server' | 'di
   useEffect(() => {
     void loadGlobalData();
   }, [loadGlobalData]);
+
+  // Verify Stripe Nitro Checkout return query (?nitro=success&session_id=... or ?nitro=cancelled)
+  useEffect(() => {
+    if (!me?.userId) return;
+    const params = new URLSearchParams(window.location.search);
+    const nitroParam = params.get('nitro');
+    const sessionId = params.get('session_id');
+    if (!nitroParam) return;
+
+    const cleanUrl = `${window.location.pathname}${window.location.hash}`;
+    window.history.replaceState({}, '', cleanUrl);
+
+    if (nitroParam === 'cancelled') {
+      showToast('ORBIT Nitro ödeme işlemi iptal edildi.', 'info');
+      return;
+    }
+
+    if (nitroParam === 'success' && sessionId) {
+      apiFetch<{ ok: boolean; profile: UserProfile }>('/nitro/verify-session', {
+        method: 'POST',
+        body: JSON.stringify({ sessionId }),
+      })
+        .then((res) => {
+          if (res.profile) {
+            updateProfileState(res.profile);
+          }
+          showToast('ORBIT Nitro aboneliğiniz aktifleştirildi!', 'success');
+        })
+        .catch((err) => {
+          showToast(
+            err instanceof ApiError ? err.message : 'Nitro ödeme doğrulaması tamamlanamadı.',
+            'error'
+          );
+        });
+    }
+  }, [me?.userId, showToast, updateProfileState]);
 
   const loadServerDetail = useCallback(
     async (sid: string) => {
@@ -300,6 +346,8 @@ export function OrbitWorkspace({ viewMode }: { viewMode: 'home' | 'server' | 'di
           ...(p.displayName !== undefined ? { displayName: String(p.displayName) } : {}),
           ...(p.discriminator !== undefined ? { discriminator: String(p.discriminator) } : {}),
           ...(p.avatarUrl !== undefined ? { avatarUrl: (p.avatarUrl as string | null) ?? null } : {}),
+          ...(p.bannerUrl !== undefined ? { bannerUrl: (p.bannerUrl as string | null) ?? null } : {}),
+          ...(p.bannerPreset !== undefined ? { bannerPreset: p.bannerPreset as BannerPresetKey } : {}),
           ...(p.bannerColor !== undefined ? { bannerColor: String(p.bannerColor) } : {}),
           ...(p.avatarFrame !== undefined ? { avatarFrame: p.avatarFrame as AvatarFrameKey } : {}),
           ...(p.profileEffect !== undefined ? { profileEffect: p.profileEffect as ProfileEffectKey } : {}),
@@ -421,7 +469,10 @@ export function OrbitWorkspace({ viewMode }: { viewMode: 'home' | 'server' | 'di
   }, [members, roleById]);
 
   const groupedMemberSections = useMemo(() => {
-    const onlineRoleGroups = new Map<string, { id: string; title: string; position: number; members: ServerMember[] }>();
+    const onlineRoleGroups = new Map<
+      string,
+      { id: string; title: string; icon?: string; color?: string; position: number; members: ServerMember[] }
+    >();
     const onlineNoRole: ServerMember[] = [];
     const offlineMembers: ServerMember[] = [];
 
@@ -430,20 +481,22 @@ export function OrbitWorkspace({ viewMode }: { viewMode: 'home' | 'server' | 'di
         offlineMembers.push(m);
         continue;
       }
-      const topRole = m.roleIds
+      const hoistedRole = m.roleIds
         .map((rid) => roleById.get(rid))
-        .filter((r): r is Role => Boolean(r && !r.isDefault))
+        .filter((r): r is Role => Boolean(r && !r.isDefault && r.hoist))
         .sort((a, b) => b.position - a.position)[0];
 
-      if (topRole) {
-        const existing = onlineRoleGroups.get(topRole.id);
+      if (hoistedRole) {
+        const existing = onlineRoleGroups.get(hoistedRole.id);
         if (existing) {
           existing.members.push(m);
         } else {
-          onlineRoleGroups.set(topRole.id, {
-            id: topRole.id,
-            title: topRole.name,
-            position: topRole.position,
+          onlineRoleGroups.set(hoistedRole.id, {
+            id: hoistedRole.id,
+            title: hoistedRole.name,
+            icon: hoistedRole.icon || undefined,
+            color: hoistedRole.color,
+            position: hoistedRole.position,
             members: [m],
           });
         }
@@ -511,7 +564,7 @@ export function OrbitWorkspace({ viewMode }: { viewMode: 'home' | 'server' | 'di
     e.preventDefault();
     if (!activeServer) return;
     if (quickChannelName.trim().length < 2) {
-      setQuickChannelError('Kanal adı en az 2 karakter olmalıdır.');
+      setQuickChannelError('Kanal veya kategori adı en az 2 karakter olmalıdır.');
       return;
     }
     setQuickChannelError('');
@@ -520,16 +573,28 @@ export function OrbitWorkspace({ viewMode }: { viewMode: 'home' | 'server' | 'di
         method: 'POST',
         body: JSON.stringify({
           name: quickChannelName.trim(),
+          topic: quickChannelTopic.trim(),
           type: quickChannelType,
-          isPrivate: false,
+          parentId: quickChannelType === 'category' ? null : quickChannelParentId || null,
+          isStage: quickChannelType === 'voice' ? quickChannelIsStage : false,
+          isPrivate: quickChannelType === 'category' ? false : quickChannelIsPrivate,
+          allowedRoleIds:
+            quickChannelType === 'category' || !quickChannelIsPrivate ? [] : quickChannelRoleIds,
         }),
       });
       setQuickChannelOpen(false);
       setQuickChannelName('');
-      showToast('Kanal oluşturuldu.', 'success');
+      setQuickChannelTopic('');
+      setQuickChannelParentId('');
+      setQuickChannelIsStage(false);
+      setQuickChannelIsPrivate(false);
+      setQuickChannelRoleIds([]);
+      showToast(quickChannelType === 'category' ? 'Kategori oluşturuldu.' : 'Kanal oluşturuldu.', 'success');
       await loadServerDetail(activeServer.id);
-      navigate(`/channels/${activeServer.id}/${res.channelId}`);
-      setMobileNavOpen(false);
+      if (quickChannelType !== 'category') {
+        navigate(`/channels/${activeServer.id}/${res.channelId}`);
+        setMobileNavOpen(false);
+      }
     } catch (err) {
       setQuickChannelError(err instanceof ApiError ? err.message : 'Kanal oluşturulamadı.');
     }
@@ -625,12 +690,12 @@ export function OrbitWorkspace({ viewMode }: { viewMode: 'home' | 'server' | 'di
       return isStage ? (
         <Radio className="w-4 h-4 shrink-0 text-fuchsia-400" />
       ) : (
-        <Volume2 className="w-4 h-4 shrink-0 text-slate-400" />
+        <Volume2 className="w-4 h-4 shrink-0 text-emerald-500 dark:text-emerald-400" />
       );
     }
-    if (type === 'announcement') return <Megaphone className="w-4 h-4 shrink-0 text-[#C084FC]" />;
-    if (type === 'forum') return <MessageSquareText className="w-4 h-4 shrink-0 text-slate-400 dark:text-[#A1A1B5]" />;
-    return <Hash className="w-4 h-4 shrink-0 text-slate-400 dark:text-[#A1A1B5]" />;
+    if (type === 'announcement') return <Megaphone className="w-4 h-4 shrink-0 text-amber-500 dark:text-amber-400" />;
+    if (type === 'forum') return <MessageSquareText className="w-4 h-4 shrink-0 text-sky-500 dark:text-sky-400" />;
+    return <Hash className="w-4 h-4 shrink-0 text-indigo-400 dark:text-[#C084FC]" />;
   };
 
   const renderChannelRow = (ch: Channel) => {
@@ -813,8 +878,12 @@ export function OrbitWorkspace({ viewMode }: { viewMode: 'home' | 'server' | 'di
                 <p className="font-display font-bold text-sm truncate group-hover:text-[#C084FC] transition-colors">
                   {activeServer.name}
                 </p>
-                <p className="text-[11px] font-mono text-slate-500 dark:text-[#A1A1B5] leading-tight">
+                <p className="text-[11px] font-mono text-slate-500 dark:text-[#A1A1B5] leading-tight truncate">
                   {members.length} üye
+                  {(activeServer.boostCount || 0) > 0 ? ` · 🚀 Sv.${activeServer.boostLevel || 0}` : ''}
+                  {activeServer.serverBadges && activeServer.serverBadges.length > 0
+                    ? ` · ${activeServer.serverBadges[0].label}`
+                    : ''}
                 </p>
               </button>
               {canCreateInvites && (
@@ -832,9 +901,14 @@ export function OrbitWorkspace({ viewMode }: { viewMode: 'home' | 'server' | 'di
                   type="button"
                   onClick={() => {
                     setQuickChannelError('');
+                    setQuickChannelParentId('');
+                    setQuickChannelType('text');
+                    setQuickChannelIsStage(false);
+                    setQuickChannelIsPrivate(false);
+                    setQuickChannelRoleIds([]);
                     setQuickChannelOpen(true);
                   }}
-                  title="Hızlı Kanal Oluştur"
+                  title="Kanal veya Kategori Oluştur"
                   className="p-1.5 rounded-lg text-slate-400 hover:text-[#22C55E] hover:bg-slate-200/50 dark:hover:bg-[#19192A]"
                 >
                   <Plus className="w-4 h-4" />
@@ -842,7 +916,10 @@ export function OrbitWorkspace({ viewMode }: { viewMode: 'home' | 'server' | 'di
               )}
               <button
                 type="button"
-                onClick={() => setServerSettingsOpen(true)}
+                onClick={() => {
+                  setServerSettingsInitialTab(undefined);
+                  setServerSettingsOpen(true);
+                }}
                 title="Sunucu Ayarları"
                 className="p-1.5 rounded-lg text-slate-400 hover:text-slate-900 dark:hover:text-[#F8FAFC] hover:bg-slate-200/50 dark:hover:bg-[#19192A]"
               >
@@ -851,6 +928,38 @@ export function OrbitWorkspace({ viewMode }: { viewMode: 'home' | 'server' | 'di
 
               {serverMenuOpen && (
                 <div className="absolute top-13 left-3 right-3 z-40 rounded-xl bg-white dark:bg-[#19192A] border border-slate-200 dark:border-[#29293D] shadow-xl p-1.5 text-xs space-y-0.5">
+                  {activeServer.serverBadges && activeServer.serverBadges.length > 0 && (
+                    <div className="px-2.5 py-2 mb-1 rounded-lg bg-slate-50 dark:bg-[#10111B] border border-slate-200 dark:border-[#29293D] space-y-1">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                        Sunucu Rozetleri
+                      </p>
+                      <div className="space-y-1">
+                        {activeServer.serverBadges.map((sb) => (
+                          <div key={sb.key} className="flex items-center gap-1.5 text-[11px] font-semibold">
+                            <span
+                              className="w-2 h-2 rounded-full shrink-0"
+                              style={{ backgroundColor: sb.color }}
+                            />
+                            <span className="truncate">{sb.label}</span>
+                            <span className="text-[10px] font-normal text-slate-400 ml-auto shrink-0">
+                              {sb.rarity}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setServerMenuOpen(false);
+                      setOnboardingOpen(true);
+                    }}
+                    className="w-full px-3 py-2 rounded-lg text-left hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-2 text-emerald-500 dark:text-emerald-400 font-medium"
+                  >
+                    <ShieldCheck className="w-3.5 h-3.5" />
+                    Topluluk Kuralları & Roller
+                  </button>
                   {canCreateInvites && (
                     <button
                       type="button"
@@ -915,13 +1024,14 @@ export function OrbitWorkspace({ viewMode }: { viewMode: 'home' | 'server' | 'di
                     type="button"
                     onClick={() => {
                       setServerMenuOpen(false);
-                      setNitroModalOpen(true);
+                      setServerSettingsInitialTab('rockets');
+                      setServerSettingsOpen(true);
                     }}
                     className="w-full px-3 py-2 rounded-lg text-left hover:bg-fuchsia-500/10 flex items-center justify-between gap-2 text-fuchsia-400 font-medium"
                   >
                     <span className="flex items-center gap-2">
-                      <Zap className="w-3.5 h-3.5" />
-                      Sunucuyu Takviye Et
+                      <Rocket className="w-3.5 h-3.5" />
+                      Sunucu Roketleri & Takviye
                     </span>
                     <span className="text-[10px] font-mono">
                       Sv.{activeServer.boostLevel || 0} ({activeServer.boostCount || 0})
@@ -931,6 +1041,7 @@ export function OrbitWorkspace({ viewMode }: { viewMode: 'home' | 'server' | 'di
                     type="button"
                     onClick={() => {
                       setServerMenuOpen(false);
+                      setServerSettingsInitialTab(undefined);
                       setServerSettingsOpen(true);
                     }}
                     className="w-full px-3 py-2 rounded-lg text-left hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-2"
@@ -964,20 +1075,40 @@ export function OrbitWorkspace({ viewMode }: { viewMode: 'home' | 'server' | 'di
                 const collapsed = Boolean(collapsedCategories[cat.id]);
                 return (
                   <div key={cat.id} className="space-y-1">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setCollapsedCategories((prev) => ({ ...prev, [cat.id]: !prev[cat.id] }))
-                      }
-                      className="w-full px-1.5 py-0.5 flex items-center gap-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 tracking-wide"
-                    >
-                      {collapsed ? (
-                        <ChevronRight className="w-3.5 h-3.5 shrink-0" />
-                      ) : (
-                        <ChevronDown className="w-3.5 h-3.5 shrink-0" />
+                    <div className="flex items-center justify-between gap-1 px-1.5 py-0.5 group">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setCollapsedCategories((prev) => ({ ...prev, [cat.id]: !prev[cat.id] }))
+                        }
+                        className="flex-1 min-w-0 flex items-center gap-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 tracking-wide text-left"
+                      >
+                        {collapsed ? (
+                          <ChevronRight className="w-3.5 h-3.5 shrink-0" />
+                        ) : (
+                          <ChevronDown className="w-3.5 h-3.5 shrink-0" />
+                        )}
+                        <span className="truncate">{cat.name}</span>
+                      </button>
+                      {canManageChannels && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setQuickChannelError('');
+                            setQuickChannelParentId(cat.id);
+                            setQuickChannelType('text');
+                            setQuickChannelIsStage(false);
+                            setQuickChannelIsPrivate(false);
+                            setQuickChannelRoleIds([]);
+                            setQuickChannelOpen(true);
+                          }}
+                          title={`${cat.name} kategorisine kanal ekle`}
+                          className="p-0.5 rounded text-slate-400 hover:text-[#22C55E] opacity-75 group-hover:opacity-100 transition-opacity"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                        </button>
                       )}
-                      <span className="truncate">{cat.name}</span>
-                    </button>
+                    </div>
                     {!collapsed && <div className="space-y-0.5">{kids.map(renderChannelRow)}</div>}
                   </div>
                 );
@@ -1574,15 +1705,15 @@ export function OrbitWorkspace({ viewMode }: { viewMode: 'home' | 'server' | 'di
                 </button>
               )}
 
-              {viewMode === 'server' && onboardingState?.enabled && (
+              {viewMode === 'server' && activeServer && (
                 <button
                   type="button"
                   onClick={() => setOnboardingOpen(true)}
-                  title="Kurallar & Kendine Rol Seç"
-                  className="min-h-[42px] min-w-[42px] sm:min-h-[40px] sm:min-w-[40px] sm:px-2.5 rounded-xl hover:bg-emerald-500/10 flex items-center justify-center gap-1.5 text-emerald-500 dark:text-emerald-400 text-xs font-medium"
+                  title="Topluluk Kuralları & Kendine Rol Seç"
+                  className="min-h-[42px] min-w-[42px] sm:min-h-[40px] sm:min-w-[40px] sm:px-2.5 rounded-xl hover:bg-emerald-500/10 flex items-center justify-center gap-1.5 text-emerald-500 dark:text-emerald-400 text-xs font-medium whitespace-nowrap"
                 >
                   <ShieldCheck className="w-4 h-4" />
-                  <span className="hidden lg:inline">Kurallar & Roller</span>
+                  <span className="hidden lg:inline">Topluluk Kuralları</span>
                 </button>
               )}
 
@@ -1612,9 +1743,9 @@ export function OrbitWorkspace({ viewMode }: { viewMode: 'home' | 'server' | 'di
                 type="button"
                 onClick={() => setCommandPaletteOpen(true)}
                 title="Hızlı Geçiş ve Komutlar (Ctrl+K)"
-                className="min-h-[42px] min-w-[42px] sm:min-h-[40px] sm:min-w-[40px] sm:px-2.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center gap-1.5 text-slate-600 dark:text-slate-300 text-xs"
+                className="min-h-[42px] min-w-[42px] sm:min-h-[40px] sm:min-w-[40px] sm:px-2.5 rounded-xl hover:bg-violet-500/10 flex items-center justify-center gap-1.5 text-slate-600 dark:text-slate-300 hover:text-[#7C3AED] dark:hover:text-[#C084FC] text-xs transition-colors"
               >
-                <Command className="w-4 h-4" />
+                <Command className="w-4 h-4 text-[#A855F7]" />
                 <span className="hidden lg:inline font-mono text-[11px] text-slate-500 dark:text-slate-400">Ctrl+K</span>
               </button>
 
@@ -1622,7 +1753,7 @@ export function OrbitWorkspace({ viewMode }: { viewMode: 'home' | 'server' | 'di
                 type="button"
                 onClick={() => setSearchOpen(true)}
                 title="Mesajlarda Ara"
-                className="min-h-[42px] min-w-[42px] sm:min-h-[40px] sm:min-w-[40px] rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center text-slate-600 dark:text-slate-300"
+                className="min-h-[42px] min-w-[42px] sm:min-h-[40px] sm:min-w-[40px] rounded-xl hover:bg-cyan-500/10 flex items-center justify-center text-cyan-600 dark:text-cyan-400 transition-colors"
               >
                 <Search className="w-4 h-4" />
               </button>
@@ -1632,8 +1763,10 @@ export function OrbitWorkspace({ viewMode }: { viewMode: 'home' | 'server' | 'di
                   type="button"
                   onClick={() => setShowPinsDrawer(!showPinsDrawer)}
                   title="Sabitlenmiş Mesajlar"
-                  className={`min-h-[42px] min-w-[42px] sm:min-h-[40px] sm:min-w-[40px] rounded-xl flex items-center justify-center ${
-                    showPinsDrawer ? 'bg-indigo-600/20 text-indigo-500 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                  className={`min-h-[42px] min-w-[42px] sm:min-h-[40px] sm:min-w-[40px] rounded-xl flex items-center justify-center transition-colors ${
+                    showPinsDrawer
+                      ? 'bg-amber-500/15 text-amber-500 dark:text-amber-400'
+                      : 'text-slate-600 dark:text-slate-300 hover:bg-amber-500/10 hover:text-amber-500'
                   }`}
                 >
                   <Pin className="w-4 h-4" />
@@ -1645,8 +1778,10 @@ export function OrbitWorkspace({ viewMode }: { viewMode: 'home' | 'server' | 'di
                   type="button"
                   onClick={() => setShowMembersDrawer(!showMembersDrawer)}
                   title="Üye Listesi"
-                  className={`min-h-[42px] min-w-[42px] sm:min-h-[40px] sm:min-w-[40px] rounded-xl flex items-center justify-center ${
-                    showMembersDrawer ? 'bg-indigo-600/20 text-indigo-500 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                  className={`min-h-[42px] min-w-[42px] sm:min-h-[40px] sm:min-w-[40px] rounded-xl flex items-center justify-center transition-colors ${
+                    showMembersDrawer
+                      ? 'bg-sky-500/15 text-sky-600 dark:text-sky-400'
+                      : 'text-slate-600 dark:text-slate-300 hover:bg-sky-500/10 hover:text-sky-500'
                   }`}
                 >
                   <Users className="w-4 h-4" />
@@ -1671,7 +1806,13 @@ export function OrbitWorkspace({ viewMode }: { viewMode: 'home' | 'server' | 'di
                 </div>
               )}
 
-              <div className="flex-1 min-h-0">
+              <motion.div
+                key={viewMode === 'server' ? `srv-${channelId || serverId || 'none'}` : `${viewMode}-${conversationId || 'home'}`}
+                initial={{ opacity: 0.92, y: 2 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.14 }}
+                className="flex-1 min-h-0"
+              >
                 {viewMode === 'discover' && (
                   <DiscoverServersView
                     onJoined={(sid) => {
@@ -1773,6 +1914,7 @@ export function OrbitWorkspace({ viewMode }: { viewMode: 'home' | 'server' | 'di
                     canDeleteOthers={canDeleteOthers}
                     canEditOthers={canEditOthers}
                     mentionCandidates={members.map((m) => m.profile)}
+                    mentionableRoles={roles.filter((r) => r.mentionable && !r.isDefault)}
                     memberRoleColors={memberRoleColorMap}
                     serverEmojis={serverEmojis}
                     serverOwnerId={activeServer?.ownerId}
@@ -1813,7 +1955,7 @@ export function OrbitWorkspace({ viewMode }: { viewMode: 'home' | 'server' | 'di
                     Görüntülenecek bir kanal seçin veya yeni bir kanal oluşturun.
                   </div>
                 )}
-              </div>
+              </motion.div>
             </div>
 
             {viewMode === 'server' && activeThreadId && (
@@ -1871,13 +2013,23 @@ export function OrbitWorkspace({ viewMode }: { viewMode: 'home' | 'server' | 'di
                   </div>
                   {groupedMemberSections.map((section) => (
                     <div key={section.id} className="space-y-1">
-                      <p className="px-2 text-[11px] font-semibold text-slate-500 dark:text-slate-400 tracking-wide">
-                        {section.title} — {section.members.length}
+                      <p
+                        className="px-2 text-[11px] font-semibold tracking-wide flex items-center gap-1.5"
+                        style={section.color ? { color: section.color } : undefined}
+                      >
+                        {section.icon && <span>{section.icon}</span>}
+                        <span className={section.color ? '' : 'text-slate-500 dark:text-slate-400'}>
+                          {section.title} — {section.members.length}
+                        </span>
                       </p>
                       <div className="space-y-0.5">
                         {section.members.map((m) => {
                           const isOffline = m.profile.status === 'offline';
                           const nameColor = memberRoleColorMap[m.userId];
+                          const topIconRole = m.roleIds
+                            .map((rid) => roleById.get(rid))
+                            .filter((r): r is Role => Boolean(r && !r.isDefault && r.icon))
+                            .sort((a, b) => b.position - a.position)[0];
                           return (
                             <button
                               key={m.userId}
@@ -1896,6 +2048,11 @@ export function OrbitWorkspace({ viewMode }: { viewMode: 'home' | 'server' | 'di
                               />
                               <div className="min-w-0 flex-1">
                                 <div className="flex items-center gap-1">
+                                  {topIconRole?.icon && (
+                                    <span title={topIconRole.name} className="text-[11px] shrink-0">
+                                      {topIconRole.icon}
+                                    </span>
+                                  )}
                                   <p
                                     className="text-xs font-medium truncate"
                                     style={nameColor ? { color: nameColor } : undefined}
@@ -2168,7 +2325,7 @@ export function OrbitWorkspace({ viewMode }: { viewMode: 'home' | 'server' | 'di
         </div>
       )}
 
-      {/* Quick Create Channel Modal */}
+      {/* Discord-style Create Channel / Category Modal */}
       {quickChannelOpen && activeServer && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 backdrop-blur-sm p-4"
@@ -2177,50 +2334,115 @@ export function OrbitWorkspace({ viewMode }: { viewMode: 'home' | 'server' | 'di
             setQuickChannelOpen(false);
           }}
         >
-          <form
+          <motion.form
+            initial={{ opacity: 0, scale: 0.96, y: 8 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            transition={{ duration: 0.16 }}
             noValidate
             onSubmit={handleQuickCreateChannel}
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-sm rounded-2xl bg-white dark:bg-[#151522] border border-slate-200 dark:border-[#29293D] p-5 space-y-4 shadow-2xl animate-orbit-enter"
+            className="w-full max-w-md max-h-[90dvh] overflow-y-auto rounded-2xl bg-white dark:bg-[#151522] border border-slate-200 dark:border-[#29293D] p-5 space-y-4 shadow-2xl"
           >
-            <div className="flex items-center justify-between">
-              <h3 className="text-base font-bold font-display">Hızlı Kanal Oluştur</h3>
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <h3 className="text-base font-bold font-display">Kanal veya Kategori Oluştur</h3>
+                <p className="text-[11px] text-slate-500 dark:text-[#A1A1B5]">{activeServer.name}</p>
+              </div>
               <button
                 type="button"
                 onClick={() => {
                   setQuickChannelError('');
                   setQuickChannelOpen(false);
                 }}
+                className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-[#19192A]"
               >
                 <X className="w-4 h-4 text-slate-400" />
               </button>
             </div>
+
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-slate-500 dark:text-[#A1A1B5]">Kanal Türü</label>
-              <div className="grid grid-cols-2 gap-2 text-xs">
+              <label className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-[#A1A1B5]">
+                Kanal Türü
+              </label>
+              <div className="space-y-1.5">
                 {[
-                  { id: 'text', label: '# Metin' },
-                  { id: 'voice', label: '🔊 Ses Odası' },
-                  { id: 'forum', label: '💬 Forum' },
-                  { id: 'announcement', label: '📢 Duyuru' },
-                ].map((opt) => (
-                  <button
-                    key={opt.id}
-                    type="button"
-                    onClick={() => setQuickChannelType(opt.id as typeof quickChannelType)}
-                    className={`h-9 rounded-xl border font-medium ${
-                      quickChannelType === opt.id
-                        ? 'border-[#A855F7] bg-[#7C3AED]/15 text-[#7C3AED] dark:text-[#C084FC]'
-                        : 'border-slate-200 dark:border-[#29293D] text-slate-500 dark:text-[#A1A1B5]'
-                    }`}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
+                  {
+                    id: 'text',
+                    label: 'Metin Kanalı',
+                    desc: 'Mesaj, görsel, GIF, anket ve alt başlık paylaşın.',
+                    icon: Hash,
+                  },
+                  {
+                    id: 'voice',
+                    label: 'Ses / Sahne Kanalı',
+                    desc: 'Sesli sohbet, ekran yayını, mini oyun ve beyaz tahta.',
+                    icon: Volume2,
+                  },
+                  {
+                    id: 'forum',
+                    label: 'Forum Kanalı',
+                    desc: 'Düzenli konular, sorular ve tartışma başlıkları açın.',
+                    icon: MessageSquare,
+                  },
+                  {
+                    id: 'announcement',
+                    label: 'Duyuru Kanalı',
+                    desc: 'Topluluğa önemli haber ve güncellemeleri duyurun.',
+                    icon: Megaphone,
+                  },
+                  {
+                    id: 'category',
+                    label: 'Kategori',
+                    desc: 'Kanalları gruplamak için yeni bir bölüm başlığı oluşturun.',
+                    icon: FolderKanban,
+                  },
+                ].map((opt) => {
+                  const Icon = opt.icon;
+                  const active = quickChannelType === opt.id;
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => setQuickChannelType(opt.id as typeof quickChannelType)}
+                      className={`w-full p-2.5 rounded-xl border text-left flex items-center gap-3 transition-colors ${
+                        active
+                          ? 'border-[#A855F7] bg-[#7C3AED]/15 text-slate-900 dark:text-white'
+                          : 'border-slate-200 dark:border-[#29293D] bg-slate-50 dark:bg-[#10111B] text-slate-600 dark:text-[#A1A1B5] hover:border-[#A855F7]/40'
+                      }`}
+                    >
+                      <Icon className={`w-4 h-4 shrink-0 ${active ? 'text-[#C084FC]' : 'text-slate-400'}`} />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-bold">{opt.label}</p>
+                        <p className="text-[11px] opacity-80 truncate">{opt.desc}</p>
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             </div>
+
+            {quickChannelType !== 'category' && (
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-slate-500 dark:text-[#A1A1B5]">Kategori</label>
+                <select
+                  value={quickChannelParentId}
+                  onChange={(e) => setQuickChannelParentId(e.target.value)}
+                  className="w-full h-10 px-3 rounded-xl bg-slate-100 dark:bg-[#19192A] border border-slate-200 dark:border-[#29293D] text-xs outline-none focus:border-[#A855F7]"
+                >
+                  <option value="">Kategorisiz</option>
+                  {categories.map((cat) => (
+                    <option key={cat.id} value={cat.id}>
+                      {cat.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-slate-500 dark:text-[#A1A1B5]">Kanal Adı</label>
+              <label className="text-xs font-medium text-slate-500 dark:text-[#A1A1B5]">
+                {quickChannelType === 'category' ? 'Kategori Adı' : 'Kanal Adı'}
+              </label>
               <input
                 type="text"
                 value={quickChannelName}
@@ -2228,10 +2450,12 @@ export function OrbitWorkspace({ viewMode }: { viewMode: 'home' | 'server' | 'di
                   setQuickChannelName(e.target.value);
                   if (quickChannelError) setQuickChannelError('');
                 }}
-                placeholder="ör. oyun-odasi"
+                placeholder={quickChannelType === 'category' ? 'ör. OYUN ODALARI' : 'ör. genel-sohbet'}
                 aria-invalid={Boolean(quickChannelError)}
-                className={`w-full h-10 px-3 rounded-xl bg-slate-100 dark:bg-[#19192A] border ${
-                  quickChannelError ? 'border-[#EF4444]' : 'border-slate-200 dark:border-[#29293D]'
+                className={`w-full h-10 px-3 rounded-xl bg-slate-100 dark:bg-[#19192A] border outline-none ${
+                  quickChannelError
+                    ? 'border-[#EF4444]'
+                    : 'border-slate-200 dark:border-[#29293D] focus:border-[#A855F7]'
                 } text-sm`}
               />
               {quickChannelError && (
@@ -2240,13 +2464,85 @@ export function OrbitWorkspace({ viewMode }: { viewMode: 'home' | 'server' | 'di
                 </p>
               )}
             </div>
+
+            {quickChannelType !== 'category' && (
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-slate-500 dark:text-[#A1A1B5]">
+                  Kanal Konusu (Opsiyonel)
+                </label>
+                <input
+                  type="text"
+                  value={quickChannelTopic}
+                  onChange={(e) => setQuickChannelTopic(e.target.value)}
+                  placeholder="Üyelerin kanal hakkında bilmesi gerekenler..."
+                  className="w-full h-9 px-3 rounded-xl bg-slate-100 dark:bg-[#19192A] border border-slate-200 dark:border-[#29293D] text-xs outline-none focus:border-[#A855F7]"
+                />
+              </div>
+            )}
+
+            {quickChannelType === 'voice' && (
+              <label className="flex items-center justify-between p-3 rounded-xl border border-slate-200 dark:border-[#29293D] bg-slate-50 dark:bg-[#10111B] cursor-pointer text-xs">
+                <span className="flex items-center gap-2 font-medium text-[#C084FC]">
+                  <Radio className="w-4 h-4" />
+                  Sahne Modu (Konuşmacılar & El Kaldırma)
+                </span>
+                <input
+                  type="checkbox"
+                  checked={quickChannelIsStage}
+                  onChange={(e) => setQuickChannelIsStage(e.target.checked)}
+                />
+              </label>
+            )}
+
+            {quickChannelType !== 'category' && (
+              <div className="space-y-2">
+                <label className="flex items-center justify-between p-3 rounded-xl border border-slate-200 dark:border-[#29293D] bg-slate-50 dark:bg-[#10111B] cursor-pointer text-xs">
+                  <span className="flex items-center gap-2 font-medium">
+                    <Lock className="w-4 h-4 text-slate-400" />
+                    Özel Kanal (Yalnızca seçili roller)
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={quickChannelIsPrivate}
+                    onChange={(e) => setQuickChannelIsPrivate(e.target.checked)}
+                  />
+                </label>
+                {quickChannelIsPrivate && roles.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 p-2.5 rounded-xl bg-slate-50 dark:bg-[#10111B] border border-slate-200 dark:border-[#29293D]">
+                    {roles.map((r) => {
+                      const checked = quickChannelRoleIds.includes(r.id);
+                      return (
+                        <button
+                          key={r.id}
+                          type="button"
+                          onClick={() =>
+                            setQuickChannelRoleIds((prev) =>
+                              checked ? prev.filter((id) => id !== r.id) : [...prev, r.id]
+                            )
+                          }
+                          className={`px-2.5 py-1 rounded-lg border text-[11px] font-semibold flex items-center gap-1.5 transition-colors ${
+                            checked
+                              ? 'border-[#A855F7] bg-[#7C3AED]/20 text-[#C084FC]'
+                              : 'border-slate-200 dark:border-[#29293D] text-slate-500 dark:text-[#A1A1B5]'
+                          }`}
+                        >
+                          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: r.color }} />
+                          {r.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
             <button
               type="submit"
               className="w-full h-10 rounded-xl bg-[#7C3AED] hover:bg-[#6D28D9] text-white text-sm font-semibold transition-colors"
             >
-              Kanalı Oluştur
+              {quickChannelType === 'category' ? 'Kategoriyi Oluştur' : 'Kanalı Oluştur'}
             </button>
-          </form>
+          </motion.form>
         </div>
       )}
 
@@ -2306,7 +2602,12 @@ export function OrbitWorkspace({ viewMode }: { viewMode: 'home' | 'server' | 'di
           members={members}
           bans={bans}
           myPermissions={myPermissions}
-          onClose={() => setServerSettingsOpen(false)}
+          initialTab={serverSettingsInitialTab}
+          onOpenNitroModal={() => setNitroModalOpen(true)}
+          onClose={() => {
+            setServerSettingsOpen(false);
+            setServerSettingsInitialTab(undefined);
+          }}
           onRefresh={() => {
             void loadGlobalData();
             void loadServerDetail(activeServer.id);
@@ -2354,10 +2655,24 @@ export function OrbitWorkspace({ viewMode }: { viewMode: 'home' | 'server' | 'di
         />
       )}
 
-      {onboardingOpen && onboardingState && activeServer && (
+      {onboardingOpen && activeServer && (
         <OnboardingModal
           serverName={activeServer.name}
-          onboarding={onboardingState}
+          onboarding={
+            onboardingState?.enabled
+              ? onboardingState
+              : {
+                  serverId: activeServer.id,
+                  enabled: true,
+                  promptTitle: 'Topluluk Kuralları & Bilgilendirme',
+                  rulesText:
+                    onboardingState?.rulesText ||
+                    '1. Tüm üyelere karşı saygılı ve nazik olun.\n2. Spam, flood ve izinsiz reklam paylaşmayın.\n3. Kanal konularına ve moderasyon uyarılarına uyun.\n4. Kişisel veri paylaşmayın, hesap güvenliğini koruyun.',
+                  roles: onboardingState?.roles || [],
+                  accepted: true,
+                  myRoleIds: onboardingState?.myRoleIds || [],
+                }
+          }
           onClose={() => setOnboardingOpen(false)}
           onCompleted={() => void loadServerDetail(activeServer.id)}
         />
@@ -2371,6 +2686,7 @@ export function OrbitWorkspace({ viewMode }: { viewMode: 'home' | 'server' | 'di
             serverContext={
               activeServer && targetMember
                 ? {
+                    serverId: activeServer.id,
                     serverName: activeServer.name,
                     isOwner: activeServer.ownerId === targetMember.userId,
                     roles,

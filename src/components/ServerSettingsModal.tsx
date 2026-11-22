@@ -9,12 +9,14 @@ import {
   ChevronRight,
   Copy,
   Edit3,
+  Eye,
   FolderKanban,
   Hash,
   LayoutTemplate,
   Link2,
   Lock,
   Plus,
+  Rocket,
   Send,
   Shield,
   ShieldAlert,
@@ -48,6 +50,7 @@ import type {
   OnboardingState,
   Role,
   ServerAnalytics,
+  ServerBoostDetails,
   ServerBotConfig,
   ServerEmoji,
   ServerMember,
@@ -58,21 +61,10 @@ import { BotBadge } from './BotBadge.tsx';
 import { SingleColorPickerButton } from './SingleColorPickerButton.tsx';
 import { UserAvatar } from './UserAvatar.tsx';
 
-interface Props {
-  server: ServerSummary;
-  channels: Channel[];
-  roles: Role[];
-  members: ServerMember[];
-  bans: Array<{ userId: string; reason: string; profile: { displayName: string; username: string } | null }>;
-  myPermissions: Permission[];
-  onClose: () => void;
-  onRefresh: () => void;
-  onServerDeleted: () => void;
-}
-
-type ServerTabId =
+export type ServerSettingsTabId =
   | 'general'
   | 'analytics'
+  | 'rockets'
   | 'templates'
   | 'channels'
   | 'roles'
@@ -84,6 +76,20 @@ type ServerTabId =
   | 'invites'
   | 'webhooks'
   | 'logs';
+
+interface Props {
+  server: ServerSummary;
+  channels: Channel[];
+  roles: Role[];
+  members: ServerMember[];
+  bans: Array<{ userId: string; reason: string; profile: { displayName: string; username: string } | null }>;
+  myPermissions: Permission[];
+  initialTab?: ServerSettingsTabId;
+  onOpenNitroModal?: () => void;
+  onClose: () => void;
+  onRefresh: () => void;
+  onServerDeleted: () => void;
+}
 
 const OVERRIDE_PERM_META: Array<{ key: ChannelOverridePermission; label: string }> = [
   { key: 'VIEW_CHANNEL', label: 'Kanalı Görüntüle' },
@@ -99,6 +105,8 @@ export function ServerSettingsModal({
   members,
   bans,
   myPermissions,
+  initialTab,
+  onOpenNitroModal,
   onClose,
   onRefresh,
   onServerDeleted,
@@ -112,10 +120,17 @@ export function ServerSettingsModal({
   const canManageMembers = isOwner || myPermissions.includes('MANAGE_MEMBERS');
   const canInvites = isOwner || myPermissions.includes('CREATE_INVITES');
 
-  const [tab, setTab] = useState<ServerTabId>(
-    canManageServer ? 'general' : canManageChannels ? 'channels' : canManageRoles ? 'roles' : 'members'
+  const [tab, setTab] = useState<ServerSettingsTabId>(
+    initialTab || (canManageServer ? 'general' : canManageChannels ? 'channels' : canManageRoles ? 'roles' : 'rockets')
   );
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(true);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(!initialTab);
+
+  useEffect(() => {
+    if (initialTab) {
+      setTab(initialTab);
+      setMobileMenuOpen(false);
+    }
+  }, [initialTab]);
 
   // General state
   const [name, setName] = useState(server.name);
@@ -155,12 +170,27 @@ export function ServerSettingsModal({
   const [roleName, setRoleName] = useState(selectedRole?.name || '');
   const [roleColor, setRoleColor] = useState(selectedRole?.color || '#7C3AED');
   const [rolePerms, setRolePerms] = useState<Permission[]>(selectedRole?.permissions || []);
+  const [roleHoist, setRoleHoist] = useState(Boolean(selectedRole?.hoist));
+  const [roleMentionable, setRoleMentionable] = useState(Boolean(selectedRole?.mentionable));
+  const [roleIcon, setRoleIcon] = useState(selectedRole?.icon || '');
+  const [roleDescription, setRoleDescription] = useState(selectedRole?.description || '');
+  const [rolePreviewOpen, setRolePreviewOpen] = useState(false);
+  const [rolePreviewLoading, setRolePreviewLoading] = useState(false);
+  const [rolePreviewChannels, setRolePreviewChannels] = useState<
+    Array<{ channelId: string; name: string; type: string; isPrivate: boolean; canView: boolean; canSend: boolean; canConnect: boolean }>
+  >([]);
 
   useEffect(() => {
     if (selectedRole) {
       setRoleName(selectedRole.name);
       setRoleColor(selectedRole.color);
       setRolePerms(selectedRole.permissions);
+      setRoleHoist(Boolean(selectedRole.hoist));
+      setRoleMentionable(Boolean(selectedRole.mentionable));
+      setRoleIcon(selectedRole.icon || '');
+      setRoleDescription(selectedRole.description || '');
+      setRolePreviewOpen(false);
+      setRolePreviewChannels([]);
     }
   }, [selectedRole]);
 
@@ -201,8 +231,11 @@ export function ServerSettingsModal({
     myRoleIds: [],
   });
 
-  // Analytics state
+  // Analytics & Rockets state
   const [analytics, setAnalytics] = useState<ServerAnalytics | null>(null);
+  const [boostDetails, setBoostDetails] = useState<ServerBoostDetails | null>(null);
+  const [boostLoading, setBoostLoading] = useState(false);
+  const [boostBusy, setBoostBusy] = useState(false);
 
   // Members filter & nicknames
   const [memberSearch, setMemberSearch] = useState('');
@@ -274,6 +307,12 @@ export function ServerSettingsModal({
       apiFetch<{ analytics: ServerAnalytics }>(`/servers/${server.id}/analytics`)
         .then((res) => setAnalytics(res.analytics))
         .catch(() => {});
+    } else if (tab === 'rockets') {
+      setBoostLoading(true);
+      apiFetch<ServerBoostDetails>(`/servers/${server.id}/boosts`)
+        .then((res) => setBoostDetails(res))
+        .catch(() => {})
+        .finally(() => setBoostLoading(false));
     } else if (tab === 'emojis') {
       apiFetch<{ emojis: ServerEmoji[] }>(`/servers/${server.id}/emojis`)
         .then((res) => setEmojis(res.emojis))
@@ -445,12 +484,83 @@ export function ServerSettingsModal({
     try {
       await apiFetch(`/roles/${selectedRole.id}`, {
         method: 'PATCH',
-        body: JSON.stringify({ name: roleName.trim(), color: roleColor, permissions: rolePerms }),
+        body: JSON.stringify({
+          name: roleName.trim(),
+          color: roleColor,
+          permissions: rolePerms,
+          hoist: roleHoist,
+          mentionable: roleMentionable,
+          icon: roleIcon,
+          description: roleDescription.trim(),
+        }),
       });
       showToast('Rol güncellendi.', 'success');
       onRefresh();
     } catch (err) {
       showToast(err instanceof ApiError ? err.message : 'Rol kaydedilemedi.', 'error');
+    }
+  };
+
+  const handleMoveRolePosition = async (role: Role, dir: 'up' | 'down') => {
+    const nonDefault = [...roles].filter((r) => !r.isDefault).sort((a, b) => b.position - a.position);
+    const idx = nonDefault.findIndex((r) => r.id === role.id);
+    if (idx === -1) return;
+    const swapIdx = dir === 'up' ? idx - 1 : idx + 1;
+    if (swapIdx < 0 || swapIdx >= nonDefault.length) return;
+    const target = nonDefault[swapIdx];
+    const posA = role.position;
+    const posB = target.position === posA ? (dir === 'up' ? posA + 1 : Math.max(1, posA - 1)) : target.position;
+    try {
+      await apiFetch(`/roles/${role.id}`, { method: 'PATCH', body: JSON.stringify({ position: posB }) });
+      await apiFetch(`/roles/${target.id}`, { method: 'PATCH', body: JSON.stringify({ position: posA }) });
+      onRefresh();
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : 'Rol sırası güncellenemedi.', 'error');
+    }
+  };
+
+  const handleToggleRolePreview = async (roleId: string) => {
+    if (rolePreviewOpen) {
+      setRolePreviewOpen(false);
+      return;
+    }
+    setRolePreviewLoading(true);
+    setRolePreviewOpen(true);
+    try {
+      const res = await apiFetch<{ channels: typeof rolePreviewChannels }>(`/servers/${server.id}/roles/${roleId}/preview`);
+      setRolePreviewChannels(res.channels || []);
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : 'Kanal önizlemesi alınamadı.', 'error');
+      setRolePreviewOpen(false);
+    } finally {
+      setRolePreviewLoading(false);
+    }
+  };
+
+  const handleToggleRocketBoost = async () => {
+    if (boostBusy) return;
+    const currentlyBoosted = Boolean(boostDetails?.myBoosted);
+    if (!currentlyBoosted && me?.nitroTier !== 'nitro' && onOpenNitroModal) {
+      onClose();
+      onOpenNitroModal();
+      return;
+    }
+    setBoostBusy(true);
+    try {
+      await apiFetch(`/nitro/boost/${server.id}`, { method: currentlyBoosted ? 'DELETE' : 'POST' });
+      const refreshed = await apiFetch<ServerBoostDetails>(`/servers/${server.id}/boosts`);
+      setBoostDetails(refreshed);
+      showToast(
+        currentlyBoosted
+          ? 'Roket takviyeniz sunucudan geri çekildi.'
+          : '🚀 Roket fırlatıldı! Sunucu takviye edildi ve Roket Takviyecisi rolünüz tanımlandı.',
+        'success'
+      );
+      onRefresh();
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : 'Roket takviyesi güncellenemedi.', 'error');
+    } finally {
+      setBoostBusy(false);
     }
   };
 
@@ -667,13 +777,14 @@ export function ServerSettingsModal({
 
   const serverCategories: Array<{
     title: string;
-    items: Array<{ id: ServerTabId; label: string; icon: React.ComponentType<{ className?: string }>; show: boolean }>;
+    items: Array<{ id: ServerSettingsTabId; label: string; icon: React.ComponentType<{ className?: string }>; show: boolean }>;
   }> = [
     {
       title: 'GENEL YÖNETİM',
       items: [
         { id: 'general', label: 'Genel & Güvenlik', icon: Shield, show: canManageServer },
         { id: 'analytics', label: 'Sunucu İstatistikleri', icon: BarChart3, show: true },
+        { id: 'rockets', label: 'Roketler & Takviye', icon: Rocket, show: true },
         { id: 'templates', label: 'Şablon Uygula', icon: LayoutTemplate, show: canManageServer && canManageChannels },
       ],
     },
@@ -707,7 +818,7 @@ export function ServerSettingsModal({
   const activeTabLabel =
     serverCategories.flatMap((c) => c.items).find((i) => i.id === tab)?.label || 'Sunucu Yönetimi';
 
-  const selectTab = (id: ServerTabId) => {
+  const selectTab = (id: ServerSettingsTabId) => {
     setTab(id);
     setMobileMenuOpen(false);
     setGeneralNameError(null);
@@ -829,19 +940,59 @@ export function ServerSettingsModal({
           <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-6">
             {tab === 'general' && (
               <form noValidate onSubmit={handleSaveGeneral} className="space-y-5 max-w-xl">
-                <div className="p-3.5 rounded-xl border border-[#A855F7]/30 bg-[#7C3AED]/10 flex items-center justify-between gap-3">
+                <div className="p-3.5 rounded-xl border border-[#A855F7]/30 bg-[#7C3AED]/10 flex items-center justify-between gap-3 flex-wrap">
                   <div className="flex items-center gap-2.5 text-xs">
-                    <Zap className="w-4 h-4 text-[#A855F7] shrink-0" />
+                    <Rocket className="w-4 h-4 text-[#A855F7] shrink-0" />
                     <div>
                       <p className="font-bold text-[#C084FC]">
-                        Sunucu Takviyesi · Seviye {server.boostLevel || 0}
+                        Sunucu Roketleri · Seviye {server.boostLevel || 0}
                       </p>
                       <p className="text-[11px] text-slate-500 dark:text-[#A1A1B5]">
-                        Bu sunucuda aktif {server.boostCount || 0} Nitro takviyesi bulunuyor.
+                        Bu sunucuda aktif {server.boostCount || 0} Roket takviyesi bulunuyor.
                       </p>
                     </div>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => selectTab('rockets')}
+                    className="h-8 px-3 rounded-lg bg-[#7C3AED] hover:bg-[#6D28D9] text-white text-xs font-semibold inline-flex items-center gap-1.5 transition-colors"
+                  >
+                    <Rocket className="w-3.5 h-3.5" />
+                    Roketleri Yönet
+                  </button>
                 </div>
+
+                {server.serverBadges && server.serverBadges.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium text-slate-500 dark:text-[#A1A1B5]">
+                      Sunucuya Özel Rozetler ({server.serverBadges.length})
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {server.serverBadges.map((sb) => (
+                        <div
+                          key={sb.key}
+                          className="p-3 rounded-xl border border-slate-200 dark:border-[#29293D] bg-slate-50 dark:bg-[#10111B] flex items-start gap-2.5 text-xs"
+                        >
+                          <span
+                            className="w-2.5 h-2.5 rounded-full mt-1 shrink-0"
+                            style={{ backgroundColor: sb.color }}
+                          />
+                          <div className="min-w-0 space-y-0.5">
+                            <p className="font-bold text-slate-900 dark:text-[#F8FAFC] truncate">
+                              {sb.label}{' '}
+                              <span className="font-normal text-[11px] text-slate-500 dark:text-[#A1A1B5]">
+                                · {sb.rarity}
+                              </span>
+                            </p>
+                            <p className="text-[11px] text-slate-500 dark:text-[#A1A1B5] leading-snug">
+                              {sb.description}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 <div className="flex items-center gap-4">
                   {server.iconUrl ? (
@@ -899,7 +1050,7 @@ export function ServerSettingsModal({
                   <div>
                     <p className="text-sm font-medium">Sunucu Keşfinde Göster</p>
                     <p className="text-xs text-slate-500 dark:text-[#A1A1B5]">
-                      Herkese açık keşif dizininde listelenir (en az 2 kanallı ise Orbit Partneri rozeti açılır).
+                      Herkese açık keşif dizininde listelenir (en az 2 kanallı ise Doğrulanmış Topluluk rozeti açılır).
                     </p>
                   </div>
                   <input type="checkbox" checked={isDiscoverable} onChange={(e) => setIsDiscoverable(e.target.checked)} />
@@ -1316,6 +1467,170 @@ export function ServerSettingsModal({
               </div>
             )}
 
+            {tab === 'rockets' && (
+              <div className="space-y-6 max-w-3xl">
+                {boostLoading && !boostDetails ? (
+                  <p className="text-xs text-slate-500 dark:text-[#A1A1B5]">Roket durumu yükleniyor...</p>
+                ) : (
+                  <>
+                    <div className="relative overflow-hidden rounded-2xl border border-fuchsia-500/35 bg-gradient-to-br from-[#7C3AED]/20 via-[#151522] to-fuchsia-500/15 p-5 space-y-4">
+                      <div className="flex items-start justify-between gap-4 flex-wrap">
+                        <div className="flex items-center gap-3.5">
+                          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#7C3AED] to-fuchsia-500 flex items-center justify-center text-white shadow-lg shadow-fuchsia-500/25 shrink-0">
+                            <Rocket className="w-6 h-6" />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h4 className="text-base font-bold font-display text-white">
+                                Sunucu Roket Seviyesi {boostDetails?.boostLevel ?? (server.boostLevel || 0)}
+                              </h4>
+                              <span className="px-2 py-0.5 rounded-full text-[11px] font-mono font-bold bg-fuchsia-500/20 text-fuchsia-300 border border-fuchsia-400/30">
+                                {boostDetails?.boostCount ?? (server.boostCount || 0)} Roket
+                              </span>
+                            </div>
+                            <p className="text-xs text-[#A1A1B5] mt-0.5">
+                              {boostDetails?.nextLevelTarget
+                                ? `Bir sonraki roket seviyesine ulaşmak için ${Math.max(
+                                    0,
+                                    boostDetails.nextLevelTarget - boostDetails.boostCount
+                                  )} roket takviyesi daha gerekiyor.`
+                                : 'Maksimum Roket Seviye 3 kilidi açıldı! Topluluk zirvede.'}
+                            </p>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          disabled={boostBusy}
+                          onClick={() => void handleToggleRocketBoost()}
+                          className={`h-10 px-4 rounded-xl text-xs font-semibold inline-flex items-center gap-2 transition-all shrink-0 ${
+                            boostDetails?.myBoosted
+                              ? 'border border-rose-400/40 bg-rose-500/10 text-rose-300 hover:bg-rose-500/20'
+                              : 'bg-gradient-to-r from-[#7C3AED] to-fuchsia-600 hover:from-[#6D28D9] hover:to-fuchsia-500 text-white shadow-lg shadow-fuchsia-500/20'
+                          }`}
+                        >
+                          <Rocket className="w-4 h-4" />
+                          {boostBusy
+                            ? 'İşleniyor...'
+                            : boostDetails?.myBoosted
+                            ? 'Roket Takviyesini Çek'
+                            : me?.nitroTier === 'nitro'
+                            ? 'Roket Fırlat (Takviye Et)'
+                            : 'Nitro ile Roket Fırlat'}
+                        </button>
+                      </div>
+
+                      {(() => {
+                        const cnt = boostDetails?.boostCount ?? 0;
+                        const maxTarget = 10;
+                        const pct = Math.min(100, Math.round((cnt / maxTarget) * 100));
+                        return (
+                          <div className="space-y-1.5">
+                            <div className="h-2.5 rounded-full bg-[#0B0B12]/80 border border-[#29293D] overflow-hidden">
+                              <div
+                                className="h-full rounded-full bg-gradient-to-r from-[#7C3AED] via-fuchsia-500 to-amber-400 transition-all duration-500"
+                                style={{ width: `${pct}%` }}
+                              />
+                            </div>
+                            <div className="flex justify-between text-[10px] font-mono text-[#A1A1B5]">
+                              <span>Seviye 0 (0)</span>
+                              <span className={cnt >= 2 ? 'text-emerald-400 font-bold' : ''}>Sv.1 (2 🚀)</span>
+                              <span className={cnt >= 5 ? 'text-emerald-400 font-bold' : ''}>Sv.2 (5 🚀)</span>
+                              <span className={cnt >= 10 ? 'text-amber-300 font-bold' : ''}>Sv.3 (10 🚀)</span>
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
+
+                    {/* Rocket Level Perks */}
+                    <div className="space-y-2.5">
+                      <h5 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-[#A1A1B5]">
+                        Roket Seviye Avantajları
+                      </h5>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        {(boostDetails?.perks || []).map((perk) => (
+                          <div
+                            key={perk.level}
+                            className={`p-4 rounded-2xl border space-y-2 transition-colors ${
+                              perk.unlocked
+                                ? 'border-emerald-500/40 bg-emerald-500/10'
+                                : 'border-slate-200 dark:border-[#29293D] bg-slate-50 dark:bg-[#10111B]'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-xs font-bold font-mono text-[#C084FC]">
+                                {perk.requiredBoosts} 🚀 Gerekli
+                              </span>
+                              <span
+                                className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
+                                  perk.unlocked
+                                    ? 'bg-emerald-500/20 text-emerald-400'
+                                    : 'bg-slate-200 dark:bg-[#19192A] text-slate-500 dark:text-[#A1A1B5]'
+                                }`}
+                              >
+                                {perk.unlocked ? 'Açık ✓' : 'Kilitli'}
+                              </span>
+                            </div>
+                            <p className="text-xs font-bold text-slate-900 dark:text-[#F8FAFC]">{perk.title}</p>
+                            <p className="text-[11px] text-slate-500 dark:text-[#A1A1B5] leading-relaxed">
+                              {perk.description}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Active Boosters */}
+                    <div className="space-y-2.5">
+                      <h5 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-[#A1A1B5]">
+                        Aktif Roket Takviyecileri ({boostDetails?.boosters.length || 0})
+                      </h5>
+                      {!boostDetails || boostDetails.boosters.length === 0 ? (
+                        <div className="p-5 rounded-2xl border border-dashed border-slate-200 dark:border-[#29293D] text-center space-y-1">
+                          <Rocket className="w-6 h-6 text-[#A855F7] mx-auto opacity-80" />
+                          <p className="text-xs font-medium text-slate-700 dark:text-[#F8FAFC]">
+                            Henüz bu sunucuya roket takviyesi yapılmamış.
+                          </p>
+                          <p className="text-[11px] text-slate-500 dark:text-[#A1A1B5]">
+                            İlk roketi fırlatan üyeler otomatik olarak <strong className="text-fuchsia-400">🚀 Roket Takviyecisi</strong> rolü kazanır!
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                          {boostDetails.boosters.map((b) => (
+                            <div
+                              key={b.userId}
+                              className="p-3 rounded-xl border border-fuchsia-500/25 bg-fuchsia-500/5 flex items-center justify-between gap-2.5"
+                            >
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <UserAvatar
+                                  src={b.profile.avatarUrl}
+                                  name={b.profile.displayName}
+                                  status={b.profile.status}
+                                  frame={b.profile.avatarFrame}
+                                  size="sm"
+                                />
+                                <div className="min-w-0">
+                                  <p className="text-xs font-semibold truncate">{b.profile.displayName}</p>
+                                  <p className="text-[11px] font-mono text-slate-500 dark:text-[#A1A1B5] truncate">
+                                    @{b.profile.username}
+                                  </p>
+                                </div>
+                              </div>
+                              <span className="text-[10px] font-mono text-fuchsia-300 shrink-0">
+                                🚀 {new Date(b.boostedAt.replace(' ', 'T') + (b.boostedAt.endsWith('Z') ? '' : 'Z')).toLocaleDateString('tr-TR')}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
             {tab === 'roles' && (
               <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
                 <div className="md:col-span-4 space-y-2">
@@ -1329,40 +1644,75 @@ export function ServerSettingsModal({
                   </button>
                   <div className="space-y-1">
                     {roles.map((r) => (
-                      <button
+                      <div
                         key={r.id}
-                        type="button"
-                        onClick={() => {
-                          setSelectedRoleId(r.id);
-                          setRoleNameError(null);
-                        }}
-                        className={`w-full px-3 py-2 rounded-xl text-left text-xs font-medium flex items-center gap-2 transition-colors ${
+                        className={`w-full px-2.5 py-2 rounded-xl text-left text-xs font-medium flex items-center gap-2 transition-colors ${
                           selectedRoleId === r.id
-                            ? 'bg-[#7C3AED]/20 border border-[#A855F7]/40 text-[#F8FAFC]'
+                            ? 'bg-[#7C3AED]/20 border border-[#A855F7]/40 text-slate-900 dark:text-[#F8FAFC]'
                             : 'hover:bg-slate-100 dark:hover:bg-[#19192A]'
                         }`}
                       >
-                        <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: r.color }} />
-                        <span className="truncate flex-1">{r.name}</span>
-                        <span className="font-mono text-[10px] text-slate-500 dark:text-[#A1A1B5]">{r.position}</span>
-                      </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedRoleId(r.id);
+                            setRoleNameError(null);
+                          }}
+                          className="flex-1 min-w-0 flex items-center gap-2 text-left"
+                        >
+                          <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: r.color }} />
+                          {r.icon && <span className="shrink-0 text-xs">{r.icon}</span>}
+                          <span className="truncate flex-1">{r.name}</span>
+                          {r.hoist && (
+                            <span title="Üye listesinde ayrı başlıkta gösterilir" className="text-[10px] text-[#C084FC] shrink-0">
+                              ★
+                            </span>
+                          )}
+                          {typeof r.memberCount === 'number' && !r.isDefault && (
+                            <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-slate-200/70 dark:bg-[#10111B] text-slate-600 dark:text-[#A1A1B5] shrink-0">
+                              {r.memberCount}
+                            </span>
+                          )}
+                        </button>
+                        {!r.isDefault && (
+                          <div className="flex items-center gap-0.5 shrink-0">
+                            <button
+                              type="button"
+                              title="Rolü yukarı taşı"
+                              onClick={() => void handleMoveRolePosition(r, 'up')}
+                              className="p-1 rounded hover:bg-slate-200 dark:hover:bg-[#222238] text-slate-400 hover:text-white"
+                            >
+                              <ArrowUp className="w-3 h-3" />
+                            </button>
+                            <button
+                              type="button"
+                              title="Rolü aşağı taşı"
+                              onClick={() => void handleMoveRolePosition(r, 'down')}
+                              className="p-1 rounded hover:bg-slate-200 dark:hover:bg-[#222238] text-slate-400 hover:text-white"
+                            >
+                              <ArrowDown className="w-3 h-3" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     ))}
                   </div>
                 </div>
 
                 {selectedRole && (
                   <div className="md:col-span-8 space-y-4 rounded-xl border border-slate-200 dark:border-[#29293D] bg-white dark:bg-[#19192A]/50 p-4">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-3 flex-wrap">
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2.5 flex-wrap">
                         <input
                           type="text"
                           value={roleName}
+                          disabled={selectedRole.isDefault}
                           onChange={(e) => {
                             setRoleName(e.target.value);
                             if (roleNameError) setRoleNameError(null);
                           }}
                           aria-invalid={Boolean(roleNameError)}
-                          className={`flex-1 min-w-[140px] h-9 px-3 rounded-lg bg-slate-100 dark:bg-[#19192A] border text-sm outline-none transition-colors ${
+                          className={`flex-1 min-w-[140px] h-9 px-3 rounded-lg bg-slate-100 dark:bg-[#19192A] border text-sm outline-none transition-colors disabled:opacity-60 ${
                             roleNameError
                               ? 'border-[#EF4444] focus:border-[#EF4444]'
                               : 'border-slate-200 dark:border-[#29293D] focus:border-[#A855F7]'
@@ -1375,13 +1725,131 @@ export function ServerSettingsModal({
                           value={roleColor}
                           onChange={setRoleColor}
                         />
+                        <button
+                          type="button"
+                          onClick={() => void handleToggleRolePreview(selectedRole.id)}
+                          className="h-9 px-3 rounded-lg border border-slate-200 dark:border-[#29293D] bg-slate-100 dark:bg-[#10111B] hover:border-[#A855F7] text-xs font-medium inline-flex items-center gap-1.5 transition-colors"
+                        >
+                          <Eye className="w-3.5 h-3.5 text-[#C084FC]" />
+                          Kanal Önizlemesi
+                        </button>
                       </div>
                       {roleNameError && (
                         <p role="alert" className="text-xs text-[#EF4444]">
                           {roleNameError}
                         </p>
                       )}
+
+                      {/* Icon Picker & Description */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                        <div className="space-y-1">
+                          <span className="text-[11px] font-medium text-slate-500 dark:text-[#A1A1B5]">Rol Simgesi</span>
+                          <div className="flex items-center gap-1 flex-wrap">
+                            {['', '🚀', '🛡️', '👑', '⚡', '💎', '⭐', '🎮', '🔥'].map((ic) => (
+                              <button
+                                key={ic || 'none'}
+                                type="button"
+                                onClick={() => setRoleIcon(ic)}
+                                className={`h-7 px-2 rounded-lg text-xs border transition-colors ${
+                                  roleIcon === ic
+                                    ? 'border-[#A855F7] bg-[#7C3AED]/20 text-white'
+                                    : 'border-slate-200 dark:border-[#29293D] bg-slate-50 dark:bg-[#10111B] text-slate-500'
+                                }`}
+                              >
+                                {ic || 'Yok'}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[11px] font-medium text-slate-500 dark:text-[#A1A1B5]">Kısa Rol Açıklaması</span>
+                          <input
+                            type="text"
+                            maxLength={140}
+                            value={roleDescription}
+                            onChange={(e) => setRoleDescription(e.target.value)}
+                            placeholder="Bu rolün amacı veya sorumluluğu..."
+                            className="w-full h-8 px-2.5 rounded-lg bg-slate-100 dark:bg-[#10111B] border border-slate-200 dark:border-[#29293D] text-xs outline-none focus:border-[#A855F7]"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Discord-style Hoist & Mentionable toggles */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                        <label
+                          className={`flex items-center justify-between gap-2 p-2.5 rounded-xl border border-slate-200 dark:border-[#29293D] bg-slate-50 dark:bg-[#10111B] text-xs ${
+                            selectedRole.isDefault ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+                          }`}
+                        >
+                          <span>Üye listesinde ayrı başlıkta göster</span>
+                          <input
+                            type="checkbox"
+                            disabled={selectedRole.isDefault}
+                            checked={roleHoist}
+                            onChange={(e) => setRoleHoist(e.target.checked)}
+                          />
+                        </label>
+                        <label className="flex items-center justify-between gap-2 p-2.5 rounded-xl border border-slate-200 dark:border-[#29293D] bg-slate-50 dark:bg-[#10111B] text-xs cursor-pointer">
+                          <span>@Rol olarak etiketlenebilir yap</span>
+                          <input
+                            type="checkbox"
+                            checked={roleMentionable}
+                            onChange={(e) => setRoleMentionable(e.target.checked)}
+                          />
+                        </label>
+                      </div>
                     </div>
+
+                    {rolePreviewOpen && (
+                      <div className="p-3 rounded-xl border border-[#A855F7]/30 bg-[#7C3AED]/10 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-[#C084FC]">
+                            {selectedRole.name} · Kanal Erişim Önizlemesi
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setRolePreviewOpen(false)}
+                            className="text-[11px] text-slate-400 hover:text-white"
+                          >
+                            Kapat
+                          </button>
+                        </div>
+                        {rolePreviewLoading ? (
+                          <p className="text-[11px] text-[#A1A1B5]">Kanallar kontrol ediliyor...</p>
+                        ) : rolePreviewChannels.length === 0 ? (
+                          <p className="text-[11px] text-[#A1A1B5]">Kanal bulunamadı.</p>
+                        ) : (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-40 overflow-y-auto pr-1">
+                            {rolePreviewChannels.map((ch) => (
+                              <div
+                                key={ch.channelId}
+                                className="px-2.5 py-1.5 rounded-lg bg-[#10111B]/80 border border-[#29293D] flex items-center justify-between gap-2 text-[11px]"
+                              >
+                                <span className="truncate font-medium">
+                                  #{ch.name}
+                                  {ch.isPrivate && ' 🔒'}
+                                </span>
+                                <span className="flex items-center gap-1 shrink-0 font-mono text-[10px]">
+                                  <span className={ch.canView ? 'text-emerald-400' : 'text-rose-400'}>
+                                    {ch.canView ? 'Gör' : 'Gizli'}
+                                  </span>
+                                  {ch.type !== 'voice' && (
+                                    <span className={ch.canSend ? 'text-sky-400' : 'text-slate-500'}>
+                                      · {ch.canSend ? 'Yaz' : 'Salt'}
+                                    </span>
+                                  )}
+                                  {ch.type === 'voice' && (
+                                    <span className={ch.canConnect ? 'text-fuchsia-400' : 'text-slate-500'}>
+                                      · {ch.canConnect ? 'Ses' : 'Kilit'}
+                                    </span>
+                                  )}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
 
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="text-[11px] font-semibold text-slate-500 dark:text-[#A1A1B5] mr-1">Hızlı Şablonlar:</span>
@@ -1398,6 +1866,19 @@ export function ServerSettingsModal({
                         className="px-2.5 py-1 rounded-lg bg-[#22C55E]/15 text-[#22C55E] hover:bg-[#22C55E]/25 text-[11px] font-medium transition-colors"
                       >
                         Moderatör
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setRoleColor('#EC4899');
+                          setRoleIcon('🚀');
+                          setRoleHoist(true);
+                          setRoleMentionable(true);
+                          setRolePerms(Array.from(new Set([...DEFAULT_MEMBER_PERMISSIONS, 'ATTACH_FILES', 'CREATE_INVITES'])));
+                        }}
+                        className="px-2.5 py-1 rounded-lg bg-fuchsia-500/15 text-fuchsia-300 hover:bg-fuchsia-500/25 text-[11px] font-medium transition-colors"
+                      >
+                        🚀 Roket VIP
                       </button>
                       <button
                         type="button"
@@ -1436,7 +1917,7 @@ export function ServerSettingsModal({
                     </div>
 
                     <div className="flex items-center justify-between pt-2 border-t border-slate-200 dark:border-[#29293D]">
-                      {!selectedRole.isDefault && (
+                      {!selectedRole.isDefault && !selectedRole.isBoosterRole && (
                         <button
                           type="button"
                           onClick={async () => {
@@ -1451,6 +1932,11 @@ export function ServerSettingsModal({
                         >
                           Rolü Sil
                         </button>
+                      )}
+                      {selectedRole.isBoosterRole && (
+                        <span className="text-[11px] text-fuchsia-400 font-medium">
+                          🚀 Otomatik Roket Takviye Rolü
+                        </span>
                       )}
                       <button
                         type="button"
@@ -2514,11 +3000,43 @@ export function ServerSettingsModal({
 
                 <div className="space-y-2">
                   <h4 className="text-sm font-semibold">Şikâyetler ({reports.length})</h4>
-                  {reports.map((r) => (
-                    <div key={r.id} className="p-3 rounded-xl border border-[#F59E0B]/25 bg-[#F59E0B]/10 text-xs">
-                      <span className="font-semibold">{r.reporter_name}</span> ({r.target_type}) — {r.reason}
-                    </div>
-                  ))}
+                  {reports.length === 0 ? (
+                    <p className="text-xs text-slate-500 dark:text-[#A1A1B5]">Henüz şikâyet kaydı yok.</p>
+                  ) : (
+                    reports.map((r) => {
+                      const match = /^\[([^\]]+)\]\s*(.*)$/s.exec(r.reason || '');
+                      const category = match ? match[1] : null;
+                      const detail = match ? match[2] : r.reason;
+                      const targetLabel =
+                        r.target_type === 'message'
+                          ? 'Mesaj'
+                          : r.target_type === 'user'
+                          ? 'Kullanıcı'
+                          : r.target_type;
+                      return (
+                        <div
+                          key={r.id}
+                          className="p-3 rounded-xl border border-[#F59E0B]/25 bg-[#F59E0B]/10 text-xs flex items-start justify-between gap-2"
+                        >
+                          <div className="space-y-0.5 min-w-0">
+                            <p className="font-semibold text-slate-900 dark:text-[#F8FAFC]">
+                              {r.reporter_name}{' '}
+                              <span className="font-normal text-slate-500 dark:text-[#A1A1B5]">
+                                · {targetLabel}
+                                {category ? ` · ${category}` : ''}
+                              </span>
+                            </p>
+                            {detail && <p className="text-slate-700 dark:text-[#E2E8F0] break-words">{detail}</p>}
+                          </div>
+                          {r.created_at && (
+                            <span className="font-mono text-[11px] text-slate-500 dark:text-[#A1A1B5] shrink-0 tabular-nums">
+                              {new Date(r.created_at.replace(' ', 'T') + 'Z').toLocaleString('tr-TR')}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
                 </div>
               </div>
             )}

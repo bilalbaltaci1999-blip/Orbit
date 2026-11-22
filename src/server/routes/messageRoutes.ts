@@ -301,6 +301,7 @@ export function createMessageRoutes(db: Database.Database, hub: OrbitRealtimeHub
 
       // Mention & reply notifications
       const sender = getProfileByUserId(db, userId, hub.isUserOnline);
+      const notifiedUserIds = new Set<string>();
       const mentionedUsernames = Array.from(
         new Set(Array.from(content.matchAll(/@([a-zA-Z0-9_.-]{3,24})/g)).map((m) => m[1]))
       );
@@ -309,10 +310,40 @@ export function createMessageRoutes(db: Database.Database, hub: OrbitRealtimeHub
           | { user_id: string }
           | undefined;
         if (target && target.user_id !== userId && canViewChannel(db, channelId, target.user_id)) {
+          notifiedUserIds.add(target.user_id);
           createNotification(db, hub, {
             userId: target.user_id,
             type: 'mention',
             title: `#${ch.name} kanalında etiketlendiniz`,
+            body: `${sender?.displayName || 'Bir üye'}: ${content.trim().slice(0, 100)}`,
+            actorId: userId,
+            link: `/channels/${ch.server_id}/${channelId}`,
+          });
+        }
+      }
+
+      // Mentionable server roles (@RolAdı)
+      const mentionableRoles = db
+        .prepare(`SELECT id, name FROM roles WHERE server_id = ? AND mentionable = 1 AND is_default = 0`)
+        .all(ch.server_id) as { id: string; name: string }[];
+      const lowerContent = content.toLowerCase();
+      for (const role of mentionableRoles) {
+        const needle = `@${role.name.toLowerCase()}`;
+        const idx = lowerContent.indexOf(needle);
+        if (idx === -1) continue;
+        const afterChar = lowerContent[idx + needle.length];
+        if (afterChar && /[a-z0-9_ğüşöçı]/i.test(afterChar)) continue;
+        const roleMembers = db
+          .prepare(`SELECT user_id FROM member_roles WHERE server_id = ? AND role_id = ?`)
+          .all(ch.server_id, role.id) as { user_id: string }[];
+        for (const rm of roleMembers) {
+          if (rm.user_id === userId || notifiedUserIds.has(rm.user_id)) continue;
+          if (!canViewChannel(db, channelId, rm.user_id)) continue;
+          notifiedUserIds.add(rm.user_id);
+          createNotification(db, hub, {
+            userId: rm.user_id,
+            type: 'mention',
+            title: `#${ch.name} · @${role.name} etiketi`,
             body: `${sender?.displayName || 'Bir üye'}: ${content.trim().slice(0, 100)}`,
             actorId: userId,
             link: `/channels/${ch.server_id}/${channelId}`,
@@ -572,12 +603,152 @@ export function createMessageRoutes(db: Database.Database, hub: OrbitRealtimeHub
   });
 
   router.post('/channels/:channelId/read', requireAuth, (req: AuthenticatedRequest, res) => {
-    db.prepare(
-      `INSERT INTO read_receipts (user_id, target_type, target_id, last_read_at)
-       VALUES (?, 'channel', ?, datetime('now'))
-       ON CONFLICT(user_id, target_type, target_id) DO UPDATE SET last_read_at = datetime('now')`
-    ).run(req.userId!, req.params.channelId);
-    res.json({ ok: true });
+    const channelId = String(req.params.channelId);
+    const userId = req.userId!;
+    if (!canViewChannel(db, channelId, userId)) {
+      res.status(403).json({ error: 'Bu kanala erişiminiz yok.' });
+      return;
+    }
+
+    const recentUnread = db
+      .prepare(
+        `SELECT id, created_at FROM messages
+         WHERE channel_id = ? AND author_id != ? AND deleted_at IS NULL
+         ORDER BY created_at DESC LIMIT 40`
+      )
+      .all(channelId, userId) as Array<{ id: string; created_at: string }>;
+
+    const readAt = new Date().toISOString();
+    const newlyMarked: string[] = [];
+    const insertReceipt = db.prepare(
+      `INSERT OR IGNORE INTO message_read_receipts (message_id, target_type, target_id, user_id, read_at)
+       VALUES (?, 'channel', ?, ?, ?)`
+    );
+
+    const tx = db.transaction(() => {
+      for (const m of recentUnread) {
+        const info = insertReceipt.run(m.id, channelId, userId, readAt);
+        if (info.changes > 0) newlyMarked.push(m.id);
+      }
+      const latestMsgId = recentUnread[0]?.id || null;
+      db.prepare(
+        `INSERT INTO read_receipts (user_id, target_type, target_id, last_read_at, last_read_message_id)
+         VALUES (?, 'channel', ?, datetime('now'), ?)
+         ON CONFLICT(user_id, target_type, target_id) DO UPDATE SET
+           last_read_at = datetime('now'),
+           last_read_message_id = COALESCE(excluded.last_read_message_id, read_receipts.last_read_message_id)`
+      ).run(userId, channelId, latestMsgId);
+    });
+    tx();
+
+    if (newlyMarked.length > 0) {
+      const reader = getProfileByUserId(db, userId, hub.isUserOnline);
+      if (reader) {
+        hub.sendToRoom(`channel:${channelId}`, {
+          type: 'message:read_receipt',
+          payload: {
+            channelId,
+            messageIds: newlyMarked,
+            reader: {
+              userId,
+              displayName: reader.displayName,
+              avatarUrl: reader.avatarUrl,
+              readAt,
+            },
+          },
+        });
+      }
+    }
+    res.json({ ok: true, markedIds: newlyMarked });
+  });
+
+  router.post('/channels/:channelId/messages/read', requireAuth, (req: AuthenticatedRequest, res) => {
+    const channelId = String(req.params.channelId);
+    const userId = req.userId!;
+    if (!canViewChannel(db, channelId, userId)) {
+      res.status(403).json({ error: 'Bu kanala erişiminiz yok.' });
+      return;
+    }
+
+    const rawIds: string[] = [];
+    if (typeof req.body?.messageId === 'string' && req.body.messageId.trim()) {
+      rawIds.push(req.body.messageId.trim());
+    }
+    if (Array.isArray(req.body?.messageIds)) {
+      for (const item of req.body.messageIds) {
+        if (typeof item === 'string' && item.trim()) rawIds.push(item.trim());
+      }
+    }
+    const candidateIds = Array.from(new Set(rawIds)).slice(0, 50);
+    if (candidateIds.length === 0) {
+      res.json({ ok: true, markedIds: [] });
+      return;
+    }
+
+    const placeholders = candidateIds.map(() => '?').join(',');
+    const validMsgs = db
+      .prepare(
+        `SELECT id, author_id, created_at FROM messages
+         WHERE channel_id = ? AND deleted_at IS NULL AND id IN (${placeholders})
+         ORDER BY created_at DESC`
+      )
+      .all(channelId, ...candidateIds) as Array<{ id: string; author_id: string; created_at: string }>;
+
+    if (validMsgs.length === 0) {
+      res.json({ ok: true, markedIds: [] });
+      return;
+    }
+
+    const readAt = new Date().toISOString();
+    const newlyMarked: string[] = [];
+    const insertReceipt = db.prepare(
+      `INSERT OR IGNORE INTO message_read_receipts (message_id, target_type, target_id, user_id, read_at)
+       VALUES (?, 'channel', ?, ?, ?)`
+    );
+
+    const tx = db.transaction(() => {
+      for (const m of validMsgs) {
+        if (m.author_id === userId) continue;
+        const info = insertReceipt.run(m.id, channelId, userId, readAt);
+        if (info.changes > 0) newlyMarked.push(m.id);
+      }
+
+      const newest = validMsgs[0];
+      const existingReceipt = db
+        .prepare(`SELECT last_read_at, last_read_message_id FROM read_receipts WHERE user_id = ? AND target_type = 'channel' AND target_id = ?`)
+        .get(userId, channelId) as { last_read_at: string; last_read_message_id: string | null } | undefined;
+
+      const shouldAdvance = !existingReceipt || newest.created_at >= existingReceipt.last_read_at;
+      db.prepare(
+        `INSERT INTO read_receipts (user_id, target_type, target_id, last_read_at, last_read_message_id)
+         VALUES (?, 'channel', ?, ?, ?)
+         ON CONFLICT(user_id, target_type, target_id) DO UPDATE SET
+           last_read_at = CASE WHEN excluded.last_read_at >= read_receipts.last_read_at THEN excluded.last_read_at ELSE read_receipts.last_read_at END,
+           last_read_message_id = CASE WHEN excluded.last_read_at >= read_receipts.last_read_at THEN excluded.last_read_message_id ELSE read_receipts.last_read_message_id END`
+      ).run(userId, channelId, shouldAdvance ? newest.created_at : existingReceipt.last_read_at, newest.id);
+    });
+    tx();
+
+    if (newlyMarked.length > 0) {
+      const reader = getProfileByUserId(db, userId, hub.isUserOnline);
+      if (reader) {
+        hub.sendToRoom(`channel:${channelId}`, {
+          type: 'message:read_receipt',
+          payload: {
+            channelId,
+            messageIds: newlyMarked,
+            reader: {
+              userId,
+              displayName: reader.displayName,
+              avatarUrl: reader.avatarUrl,
+              readAt,
+            },
+          },
+        });
+      }
+    }
+
+    res.json({ ok: true, markedIds: newlyMarked });
   });
 
   // --- FORUM CHANNELS ---

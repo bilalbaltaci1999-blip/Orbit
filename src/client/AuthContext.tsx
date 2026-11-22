@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import type { UserProfile, UserSettings } from '../shared/types.ts';
 import { apiFetch, getStoredToken, setStoredToken } from './api.ts';
+import { signOutFirebase } from './firebase.ts';
 import { wsClient } from './wsClient.ts';
 
 interface AuthContextValue {
@@ -88,6 +89,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = useCallback(async () => {
     try {
       await apiFetch('/auth/logout', { method: 'POST' });
+    } catch {
+      // Ignore
+    }
+    try {
+      await signOutFirebase();
     } catch {
       // Ignore
     }

@@ -247,12 +247,28 @@ export function CommandPaletteModal({
                     : 'hover:bg-slate-100 dark:hover:bg-[#19192A]'
                 }`}
               >
-                <span className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-[#19192A] border border-slate-200 dark:border-[#29293D] flex items-center justify-center shrink-0 text-[#A855F7]">
+                <span
+                  className={`w-8 h-8 rounded-lg border flex items-center justify-center shrink-0 ${
+                    item.icon === 'voice'
+                      ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-500'
+                      : item.icon === 'dm'
+                      ? 'bg-sky-500/15 border-sky-500/30 text-sky-500'
+                      : item.icon === 'server'
+                      ? 'bg-amber-500/15 border-amber-500/30 text-amber-500'
+                      : item.icon === 'badge'
+                      ? 'bg-fuchsia-500/15 border-fuchsia-500/30 text-fuchsia-400'
+                      : item.icon === 'theme'
+                      ? 'bg-cyan-500/15 border-cyan-500/30 text-cyan-500'
+                      : item.icon === 'settings'
+                      ? 'bg-indigo-500/15 border-indigo-500/30 text-indigo-400'
+                      : 'bg-[#7C3AED]/15 border-[#A855F7]/30 text-[#A855F7]'
+                  }`}
+                >
                   {item.icon === 'hash' && <Hash className="w-4 h-4" />}
                   {item.icon === 'voice' && (item.id === 'act-voice-mute' ? <Mic className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />)}
                   {item.icon === 'dm' && <MessageSquare className="w-4 h-4" />}
                   {item.icon === 'server' && <Compass className="w-4 h-4" />}
-                  {item.icon === 'badge' && <Award className="w-4 h-4 text-[#C084FC]" />}
+                  {item.icon === 'badge' && <Award className="w-4 h-4" />}
                   {item.icon === 'settings' && <Settings className="w-4 h-4" />}
                   {item.icon === 'profile' && <User className="w-4 h-4" />}
                   {item.icon === 'theme' && (settings?.theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />)}

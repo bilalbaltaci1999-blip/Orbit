@@ -77,6 +77,65 @@ export function BadgeGlyph({ badgeKey, color, sizePx = 16 }: { badgeKey: BadgeKe
           />
         </svg>
       );
+    case 'orbit_nitro':
+      // ORBIT Nitro Boost Winged Comet Emblem
+      return (
+        <svg width={sizePx} height={sizePx} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path
+            d="M13 2.5L20 9.5L11 21.5L4 14.5L13 2.5Z"
+            fill={color}
+            fillOpacity="0.24"
+            stroke={color}
+            strokeWidth="1.85"
+            strokeLinejoin="round"
+          />
+          <path
+            d="M12.5 7.2L15.8 10.5L11.2 16.5L8.2 13.5L12.5 7.2Z"
+            fill={color}
+          />
+          <path d="M5 7L7.5 9.5M16.5 16.5L19 19" stroke={color} strokeWidth="1.8" strokeLinecap="round" />
+        </svg>
+      );
+    case 'server_booster':
+      // Server Booster Sparkling Pink Gem Emblem
+      return (
+        <svg width={sizePx} height={sizePx} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path
+            d="M12 2.4L19.2 8.2L16.5 20.2H7.5L4.8 8.2L12 2.4Z"
+            fill={color}
+            fillOpacity="0.25"
+            stroke={color}
+            strokeWidth="1.9"
+            strokeLinejoin="round"
+          />
+          <path d="M12 6.8L15.5 11L12 16.2L8.5 11L12 6.8Z" fill={color} />
+        </svg>
+      );
+    case 'bug_hunter_gold':
+      // Golden Bug Hunter Shield + Crown Spark
+      return (
+        <svg width={sizePx} height={sizePx} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path
+            d="M12 2.2L19.4 5.4V11.8C19.4 16.8 16.1 20.7 12 22C7.9 20.7 4.6 16.8 4.6 11.8V5.4L12 2.2Z"
+            fill={color}
+            fillOpacity="0.26"
+            stroke={color}
+            strokeWidth="1.9"
+            strokeLinejoin="round"
+          />
+          <ellipse cx="12" cy="13.2" rx="3.1" ry="3.8" fill={color} />
+          <path d="M9.8 9.6L8.4 7.8M14.2 9.6L15.6 7.8M7.6 13H9M15 13H16.4M8.4 16.2L9.8 15.2M15.6 16.2L14.2 15.2" stroke={color} strokeWidth="1.7" strokeLinecap="round" />
+        </svg>
+      );
+    case 'bug_hunter_silver':
+      // Silver Bug Hunter Emblem
+      return (
+        <svg width={sizePx} height={sizePx} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <circle cx="12" cy="12" r="9.2" fill={color} fillOpacity="0.2" stroke={color} strokeWidth="1.8" />
+          <ellipse cx="12" cy="13" rx="3.4" ry="4" fill={color} fillOpacity="0.38" stroke={color} strokeWidth="1.8" />
+          <path d="M10.2 8.8L8.8 7M13.8 8.8L15.2 7M7.2 12H8.5M15.5 12H16.8M7.6 15.5L9 14.5M16.4 15.5L15 14.5M12 9V17" stroke={color} strokeWidth="1.7" strokeLinecap="round" />
+        </svg>
+      );
     case 'orbit_partner':
       // Discord Partner Infinity Server Owner Emblem
       return (
@@ -131,7 +190,7 @@ export function BadgeGlyph({ badgeKey, color, sizePx = 16 }: { badgeKey: BadgeKe
         </svg>
       );
     case 'bug_hunter':
-      // Discord Bug Hunter Emerald/Amber Magnifying Bug Shield
+      // Legacy Bug Hunter Magnifying Bug Shield
       return (
         <svg width={sizePx} height={sizePx} viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <circle cx="12" cy="12" r="9.2" fill={color} fillOpacity="0.2" stroke={color} strokeWidth="1.8" />

@@ -1,0 +1,109 @@
+{
+  "entities": {
+    "UserProfileDoc": {
+      "title": "UserProfileDoc",
+      "description": "Authenticated ORBIT user profile mirrored to Firestore for multi-device identity sync.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128 },
+        "email": { "type": "string", "format": "email", "maxLength": 180 },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "username": { "type": "string", "minLength": 3, "maxLength": 30 },
+        "photoUrl": { "type": "string", "maxLength": 500 },
+        "preferredStatus": { "type": "string", "enum": ["online", "idle", "dnd", "offline"] },
+        "customStatus": { "type": "string", "maxLength": 80 },
+        "nitroTier": { "type": "string", "enum": ["none", "nitro"] },
+        "authProvider": { "type": "string", "enum": ["google", "email"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "uid",
+        "email",
+        "displayName",
+        "username",
+        "preferredStatus",
+        "nitroTier",
+        "authProvider",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "UserPreferencesDoc": {
+      "title": "UserPreferencesDoc",
+      "description": "User appearance, notification, and privacy preferences synchronized across sessions.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128 },
+        "theme": { "type": "string", "enum": ["dark", "light", "system"] },
+        "fontSize": { "type": "string", "enum": ["sm", "md", "lg"] },
+        "messageDensity": { "type": "string", "enum": ["compact", "cozy"] },
+        "inAppNotifications": { "type": "boolean" },
+        "soundEnabled": { "type": "boolean" },
+        "showOnlineStatus": { "type": "boolean" },
+        "dmPermission": { "type": "string", "enum": ["everyone", "friends", "server_members"] },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "uid",
+        "theme",
+        "fontSize",
+        "messageDensity",
+        "inAppNotifications",
+        "soundEnabled",
+        "showOnlineStatus",
+        "dmPermission",
+        "updatedAt"
+      ]
+    },
+    "ReadCursorDoc": {
+      "title": "ReadCursorDoc",
+      "description": "Per-user read receipt cursor tracking the latest viewed message in a channel or DM conversation.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128 },
+        "targetType": { "type": "string", "enum": ["channel", "dm"] },
+        "targetId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "lastReadMessageId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "lastReadAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "uid",
+        "targetType",
+        "targetId",
+        "lastReadMessageId",
+        "lastReadAt",
+        "updatedAt"
+      ]
+    },
+    "ConnectionTestDoc": {
+      "title": "ConnectionTestDoc",
+      "description": "Read-only health probe path used to verify Firestore network reachability.",
+      "type": "object",
+      "properties": {
+        "status": { "type": "string", "enum": ["ok"] },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["status", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfileDoc" },
+      "description": "Owner-isolated user profile metadata."
+    },
+    "/users/{userId}/preferences/{prefId}": {
+      "schema": { "$ref": "#/entities/UserPreferencesDoc" },
+      "description": "Owner-isolated user interface and privacy preferences."
+    },
+    "/users/{userId}/readCursors/{cursorId}": {
+      "schema": { "$ref": "#/entities/ReadCursorDoc" },
+      "description": "Owner-isolated channel and DM read receipt cursors."
+    },
+    "/test/{testId}": {
+      "schema": { "$ref": "#/entities/ConnectionTestDoc" },
+      "description": "Client connectivity probe document (/test/connection)."
+    }
+  }
+}
